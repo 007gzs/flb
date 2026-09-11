@@ -1,0 +1,23 @@
+[package]
+name = "flb-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+readme.workspace = true
+keywords.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flb-core = { path = "../flb-core" }
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

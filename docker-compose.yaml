@@ -1,0 +1,13 @@
+services:
+  flb:
+    image: 007gzs/flb
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./data:/flb/data
+    ports:
+      - "22080:80"
+      - "22443:443"
+      - "22081:9000"
+    restart: unless-stopped
+

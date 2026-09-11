@@ -1,0 +1,27 @@
+[package]
+name = "flb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+readme.workspace = true
+keywords.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+dashmap = { workspace = true }
+flb-cert = { path = "../flb-cert" }
+flb-config = { path = "../flb-config" }
+flb-manager = { path = "../flb-manager" }
+flb-proxy = { path = "../flb-proxy" }
+flb-store = { path = "../flb-store" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -1,0 +1,30 @@
+[package]
+name = "flb-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+readme.workspace = true
+keywords.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+flb-core = { path = "../flb-core" }
+flb-config = { path = "../flb-config" }
+flb-plugin = { path = "../flb-plugin" }
+flb-router = { path = "../flb-router" }
+flb-store = { path = "../flb-store" }
+http = { workspace = true }
+parking_lot = { workspace = true }
+pingora = { workspace = true }
+rcgen = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
