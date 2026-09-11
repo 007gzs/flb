@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import type { Certificate, HeaderRewrite, Host, RouteRule, Upstream } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type Certificate, type HeaderRewrite, type Host, type RouteRule, type Upstream } from '~/api'
+import { onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { api } from '~/api'
+
+const { t } = useI18n()
 
 const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 const list = ref<Host[]>([])
@@ -112,15 +116,15 @@ async function save() {
   const httpOn = hasProtocol('http')
   const httpsOn = hasProtocol('https')
   if (!httpOn && !httpsOn) {
-    ElMessage.error('请至少勾选一种协议')
+    ElMessage.error(t('hosts.needProtocol'))
     return
   }
   if (httpsOn && !form.certId) {
-    ElMessage.error('勾选 HTTPS 时需要选择证书')
+    ElMessage.error(t('hosts.needCert'))
     return
   }
   if (form.forceHttps && !httpsOn) {
-    ElMessage.error('HTTP 转 HTTPS 需要同时勾选 HTTPS')
+    ElMessage.error(t('hosts.needHttpsForRedirect'))
     return
   }
   try {
@@ -141,7 +145,7 @@ async function save() {
       await api.hosts.update(editing.value, body)
     else
       await api.hosts.create(body)
-    ElMessage.success('已保存')
+    ElMessage.success(t('common.saved'))
     visible.value = false
     await load()
   }
@@ -151,10 +155,10 @@ async function save() {
 }
 
 async function remove(row: Host) {
-  await ElMessageBox.confirm(`删除主机 ${row.hostname}？`, '确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('hosts.deleteConfirm', { name: row.hostname }), t('common.confirm'), { type: 'warning' })
   try {
     await api.hosts.remove(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('common.deleted'))
     await load()
   }
   catch (e) {
@@ -172,104 +176,142 @@ onMounted(load)
 <template>
   <div class="page-card">
     <div class="page-header">
-      <span>主机配置</span>
-      <el-button type="primary" @click="openCreate">添加主机</el-button>
+      <span>{{ t('hosts.title') }}</span>
+      <el-button type="primary" @click="openCreate">
+        {{ t('hosts.add') }}
+      </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="hostname" label="主机域名" min-width="180" />
-      <el-table-column label="协议" width="140">
-        <template #default="{ row }">{{ protocolLabel(row) }}</template>
-      </el-table-column>
-      <el-table-column label="HTTP 转 HTTPS" width="130">
-        <template #default="{ row }">{{ row.forceHttps ? '是' : '否' }}</template>
-      </el-table-column>
-      <el-table-column label="默认服务组" min-width="140">
-        <template #default="{ row }">{{ upstreamName(row.defaultUpstreamId) }}</template>
-      </el-table-column>
-      <el-table-column label="路由数" width="90">
-        <template #default="{ row }">{{ row.routes.length }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="160">
+      <el-table-column prop="hostname" :label="t('hosts.hostname')" min-width="180" />
+      <el-table-column :label="t('hosts.protocol')" width="140">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          {{ protocolLabel(row) }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('hosts.forceHttps')" width="130">
+        <template #default="{ row }">
+          {{ row.forceHttps ? t('common.yes') : t('common.no') }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('hosts.defaultUpstream')" min-width="140">
+        <template #default="{ row }">
+          {{ upstreamName(row.defaultUpstreamId) }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('hosts.routeCount')" width="90">
+        <template #default="{ row }">
+          {{ row.routes.length }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('common.actions')" width="160">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openEdit(row)">
+            {{ t('common.edit') }}
+          </el-button>
+          <el-button link type="danger" @click="remove(row)">
+            {{ t('common.delete') }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="visible" :title="editing ? '编辑主机' : '添加主机'" width="920px" top="5vh">
-      <el-form label-width="130px">
-        <el-form-item label="主机域名">
-          <el-input v-model="form.hostname" placeholder="app.example.com 或 *.example.com" />
+    <el-dialog v-model="visible" :title="editing ? t('hosts.edit') : t('hosts.add')" width="920px" top="5vh">
+      <el-form label-width="140px">
+        <el-form-item :label="t('hosts.hostname')">
+          <el-input v-model="form.hostname" :placeholder="t('hosts.hostnamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="协议类型">
+        <el-form-item :label="t('hosts.protocolType')">
           <el-checkbox-group v-model="form.protocols" @change="onProtocolsChange">
-            <el-checkbox value="http">HTTP</el-checkbox>
-            <el-checkbox value="https">HTTPS</el-checkbox>
+            <el-checkbox value="http">
+              HTTP
+            </el-checkbox>
+            <el-checkbox value="https">
+              HTTPS
+            </el-checkbox>
           </el-checkbox-group>
         </el-form-item>
-        <el-form-item v-if="hasProtocol('https')" label="证书">
-          <el-select v-model="form.certId" class="w-full" filterable placeholder="选择证书">
+        <el-form-item v-if="hasProtocol('https')" :label="t('hosts.cert')">
+          <el-select v-model="form.certId" class="w-full" filterable :placeholder="t('hosts.selectCert')">
             <el-option v-for="c in certs" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="hasProtocol('http') && hasProtocol('https')" label="HTTP 转 HTTPS">
+        <el-form-item v-if="hasProtocol('http') && hasProtocol('https')" :label="t('hosts.forceHttps')">
           <el-switch v-model="form.forceHttps" />
         </el-form-item>
-        <el-form-item label="默认服务组">
+        <el-form-item :label="t('hosts.defaultUpstream')">
           <el-select v-model="form.defaultUpstreamId" class="w-full">
             <el-option v-for="u in upstreams" :key="u.id" :label="u.name" :value="u.id" />
           </el-select>
         </el-form-item>
-        <el-divider>路由管理</el-divider>
+        <el-divider>{{ t('hosts.routes') }}</el-divider>
         <div v-for="(route, idx) in form.routes" :key="idx" class="route-box">
-          <div class="flex justify-between mb-8px">
-            <b>路由 {{ idx + 1 }}</b>
-            <el-button link type="danger" @click="form.routes.splice(idx, 1)">删除路由</el-button>
+          <div class="mb-8px flex justify-between">
+            <b>{{ t('hosts.routeN', { n: idx + 1 }) }}</b>
+            <el-button link type="danger" @click="form.routes.splice(idx, 1)">
+              {{ t('hosts.deleteRoute') }}
+            </el-button>
           </div>
-          <el-form-item label="匹配内容">
-            <el-input v-model="route.pattern" placeholder="前缀如 /api 或正则" />
+          <el-form-item :label="t('hosts.pattern')">
+            <el-input v-model="route.pattern" :placeholder="t('hosts.patternPlaceholder')" />
           </el-form-item>
-          <el-form-item label="匹配规则">
+          <el-form-item :label="t('hosts.matchType')">
             <el-radio-group v-model="route.matchType">
-              <el-radio value="prefix">前缀匹配</el-radio>
-              <el-radio value="regex">正则匹配</el-radio>
+              <el-radio value="prefix">
+                {{ t('hosts.prefix') }}
+              </el-radio>
+              <el-radio value="regex">
+                {{ t('hosts.regex') }}
+              </el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="跳转 URI">
-            <el-input v-model="route.rewriteUri" placeholder="支持 $1 等正则变量，前缀可写 /new" />
+          <el-form-item :label="t('hosts.rewriteUri')">
+            <el-input v-model="route.rewriteUri" :placeholder="t('hosts.rewritePlaceholder')" />
           </el-form-item>
-          <el-form-item label="支持方法">
-            <el-select v-model="route.methods" multiple class="w-full" placeholder="空表示全部">
+          <el-form-item :label="t('hosts.methods')">
+            <el-select v-model="route.methods" multiple class="w-full" :placeholder="t('hosts.methodsPlaceholder')">
               <el-option v-for="m in methods" :key="m" :label="m" :value="m" />
             </el-select>
           </el-form-item>
-          <el-form-item label="目标服务组">
+          <el-form-item :label="t('hosts.targetUpstream')">
             <el-select v-model="route.upstreamId" class="w-full">
               <el-option v-for="u in upstreams" :key="u.id" :label="u.name" :value="u.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="请求头重写">
-            <div v-for="(h, hidx) in route.requestHeaders" :key="hidx" class="flex gap-8px mb-8px w-full">
-              <el-input v-model="h.name" placeholder="Header 名" />
-              <el-input v-model="h.value" placeholder="值，可用 $http_host；空则删除" />
-              <el-button @click="route.requestHeaders.splice(hidx, 1)">删</el-button>
+          <el-form-item :label="t('hosts.requestHeaders')">
+            <div v-for="(h, hidx) in route.requestHeaders" :key="hidx" class="mb-8px w-full flex gap-8px">
+              <el-input v-model="h.name" :placeholder="t('hosts.headerName')" />
+              <el-input v-model="h.value" :placeholder="t('hosts.requestHeaderValue')" />
+              <el-button @click="route.requestHeaders.splice(hidx, 1)">
+                {{ t('hosts.removeHeader') }}
+              </el-button>
             </div>
-            <el-button @click="addHeader(route.requestHeaders)">添加请求头</el-button>
+            <el-button @click="addHeader(route.requestHeaders)">
+              {{ t('hosts.addRequestHeader') }}
+            </el-button>
           </el-form-item>
-          <el-form-item label="返回头重写">
-            <div v-for="(h, hidx) in route.responseHeaders" :key="hidx" class="flex gap-8px mb-8px w-full">
-              <el-input v-model="h.name" placeholder="Header 名" />
-              <el-input v-model="h.value" placeholder="值，可用 $upstream_http_server" />
-              <el-button @click="route.responseHeaders.splice(hidx, 1)">删</el-button>
+          <el-form-item :label="t('hosts.responseHeaders')">
+            <div v-for="(h, hidx) in route.responseHeaders" :key="hidx" class="mb-8px w-full flex gap-8px">
+              <el-input v-model="h.name" :placeholder="t('hosts.headerName')" />
+              <el-input v-model="h.value" :placeholder="t('hosts.responseHeaderValue')" />
+              <el-button @click="route.responseHeaders.splice(hidx, 1)">
+                {{ t('hosts.removeHeader') }}
+              </el-button>
             </div>
-            <el-button @click="addHeader(route.responseHeaders)">添加返回头</el-button>
+            <el-button @click="addHeader(route.responseHeaders)">
+              {{ t('hosts.addResponseHeader') }}
+            </el-button>
           </el-form-item>
         </div>
-        <el-button @click="addRoute">添加路由</el-button>
+        <el-button @click="addRoute">
+          {{ t('hosts.addRoute') }}
+        </el-button>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="save">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import type { DnsProvider } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type DnsProvider } from '~/api'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { api } from '~/api'
 
+const { t } = useI18n()
 const list = ref<DnsProvider[]>([])
 const loading = ref(false)
 const visible = ref(false)
@@ -14,11 +17,11 @@ const form = reactive({
   accessSecret: '',
 })
 
-const kinds = [
-  { value: 'aliyun', label: '阿里云' },
-  { value: 'wanwang', label: '万网' },
-  { value: 'godaddy', label: 'GoDaddy' },
-]
+const kinds = computed(() => [
+  { value: 'aliyun' as const, label: t('dns.kind.aliyun') },
+  { value: 'wanwang' as const, label: t('dns.kind.wanwang') },
+  { value: 'godaddy' as const, label: t('dns.kind.godaddy') },
+])
 
 async function load() {
   loading.value = true
@@ -55,7 +58,7 @@ async function save() {
       await api.dns.update(editing.value, body)
     else
       await api.dns.create(body)
-    ElMessage.success('已保存')
+    ElMessage.success(t('common.saved'))
     visible.value = false
     await load()
   }
@@ -65,10 +68,10 @@ async function save() {
 }
 
 async function remove(row: DnsProvider) {
-  await ElMessageBox.confirm(`删除 ${row.name}？`, '确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('dns.deleteConfirm', { name: row.name }), t('common.confirm'), { type: 'warning' })
   try {
     await api.dns.remove(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('common.deleted'))
     await load()
   }
   catch (e) {
@@ -77,7 +80,7 @@ async function remove(row: DnsProvider) {
 }
 
 function kindLabel(kind: string) {
-  return kinds.find(k => k.value === kind)?.label || kind
+  return kinds.value.find(k => k.value === kind)?.label || kind
 }
 
 onMounted(load)
@@ -86,28 +89,36 @@ onMounted(load)
 <template>
   <div class="page-card">
     <div class="page-header">
-      <span>DNS 提供商</span>
-      <el-button type="primary" @click="openCreate">添加提供商</el-button>
+      <span>{{ t('dns.title') }}</span>
+      <el-button type="primary" @click="openCreate">
+        {{ t('dns.add') }}
+      </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="name" label="名称" />
-      <el-table-column label="类型" width="140">
-        <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
+      <el-table-column prop="name" :label="t('common.name')" />
+      <el-table-column :label="t('common.type')" width="140">
+        <template #default="{ row }">
+          {{ kindLabel(row.kind) }}
+        </template>
       </el-table-column>
       <el-table-column prop="accessKey" label="Access Key" />
-      <el-table-column label="操作" width="160">
+      <el-table-column :label="t('common.actions')" width="160">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          <el-button link type="primary" @click="openEdit(row)">
+            {{ t('common.edit') }}
+          </el-button>
+          <el-button link type="danger" @click="remove(row)">
+            {{ t('common.delete') }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="visible" :title="editing ? '编辑提供商' : '添加提供商'" width="520px">
+    <el-dialog v-model="visible" :title="editing ? t('dns.edit') : t('dns.add')" width="520px">
       <el-form label-width="110px">
-        <el-form-item label="名称">
+        <el-form-item :label="t('common.name')">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="t('common.type')">
           <el-select v-model="form.kind" class="w-full">
             <el-option v-for="k in kinds" :key="k.value" :label="k.label" :value="k.value" />
           </el-select>
@@ -120,8 +131,12 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="save">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

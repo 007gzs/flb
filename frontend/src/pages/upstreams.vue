@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import type { Upstream, UpstreamServer } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type Upstream, type UpstreamServer } from '~/api'
+import { onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { api } from '~/api'
+
+const { t } = useI18n()
 
 const list = ref<Upstream[]>([])
 const loading = ref(false)
@@ -89,7 +93,7 @@ async function save() {
   const servers: UpstreamServer[] = []
   for (const s of form.servers) {
     if (s.port != null && (s.port < 1 || s.port > 65535)) {
-      ElMessage.error('请填写有效端口')
+      ElMessage.error(t('upstreams.invalidPort'))
       return
     }
     servers.push({
@@ -110,7 +114,7 @@ async function save() {
       await api.upstreams.update(editing.value, body)
     else
       await api.upstreams.create(body)
-    ElMessage.success('已保存')
+    ElMessage.success(t('common.saved'))
     visible.value = false
     await load()
   }
@@ -120,10 +124,10 @@ async function save() {
 }
 
 async function remove(row: Upstream) {
-  await ElMessageBox.confirm(`删除服务组 ${row.name}？`, '确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('upstreams.deleteConfirm', { name: row.name }), t('common.confirm'), { type: 'warning' })
   try {
     await api.upstreams.remove(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('common.deleted'))
     await load()
   }
   catch (e) {
@@ -137,39 +141,45 @@ onMounted(load)
 <template>
   <div class="page-card">
     <div class="page-header">
-      <span>后端服务组</span>
-      <el-button type="primary" @click="openCreate">添加服务组</el-button>
+      <span>{{ t('upstreams.title') }}</span>
+      <el-button type="primary" @click="openCreate">
+        {{ t('upstreams.add') }}
+      </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="name" label="名称" />
+      <el-table-column prop="name" :label="t('common.name')" />
       <el-table-column prop="sni" label="SNI" />
-      <el-table-column label="后端" min-width="320">
+      <el-table-column :label="t('upstreams.backends')" min-width="320">
         <template #default="{ row }">
           {{ row.servers.map((s: UpstreamServer) => serverLabel(s, row)).join('，') }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160">
+      <el-table-column :label="t('common.actions')" width="160">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          <el-button link type="primary" @click="openEdit(row)">
+            {{ t('common.edit') }}
+          </el-button>
+          <el-button link type="danger" @click="remove(row)">
+            {{ t('common.delete') }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="visible" :title="editing ? '编辑服务组' : '添加服务组'" width="920px">
+    <el-dialog v-model="visible" :title="editing ? t('upstreams.edit') : t('upstreams.add')" width="920px">
       <el-form label-width="90px">
-        <el-form-item label="名称">
+        <el-form-item :label="t('common.name')">
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="SNI">
-          <el-input v-model="form.sni" placeholder="留空则使用后端地址，不自动填写" />
+          <el-input v-model="form.sni" :placeholder="t('upstreams.sniPlaceholder')" />
         </el-form-item>
-        <el-form-item label="后端">
+        <el-form-item :label="t('upstreams.backends')">
           <div class="server-head">
-            <span class="col-proto">协议</span>
-            <span class="col-addr">IP / 域名</span>
-            <span class="col-num">端口</span>
-            <span class="col-num">权重</span>
-            <span class="col-verify">校验证书</span>
+            <span class="col-proto">{{ t('upstreams.protocol') }}</span>
+            <span class="col-addr">{{ t('upstreams.address') }}</span>
+            <span class="col-num">{{ t('upstreams.port') }}</span>
+            <span class="col-num">{{ t('upstreams.weight') }}</span>
+            <span class="col-verify">{{ t('upstreams.verifyTls') }}</span>
             <span class="col-act" />
           </div>
           <div v-for="(s, idx) in form.servers" :key="idx" class="server-row">
@@ -177,7 +187,7 @@ onMounted(load)
               <el-option label="HTTP" value="http" />
               <el-option label="HTTPS" value="https" />
             </el-select>
-            <el-input v-model="s.address" class="col-addr" placeholder="IP 或域名" />
+            <el-input v-model="s.address" class="col-addr" :placeholder="t('upstreams.addressPlaceholder')" />
             <el-input
               class="col-num"
               :model-value="s.port == null ? '' : String(s.port)"
@@ -189,14 +199,22 @@ onMounted(load)
               <el-switch v-if="s.protocol === 'https'" v-model="s.verifyTls" />
               <span v-else class="text-gray-400">-</span>
             </div>
-            <el-button class="col-act" :disabled="form.servers.length === 1" @click="removeServer(idx)">删除</el-button>
+            <el-button class="col-act" :disabled="form.servers.length === 1" @click="removeServer(idx)">
+              {{ t('common.delete') }}
+            </el-button>
           </div>
-          <el-button @click="addServer">增加后端</el-button>
+          <el-button @click="addServer">
+            {{ t('upstreams.addServer') }}
+          </el-button>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="save">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

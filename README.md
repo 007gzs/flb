@@ -1,44 +1,46 @@
 # Fast Load Balancing (flb)
 
-基于 [Pingora](https://github.com/cloudflare/pingora) 的反向代理与负载均衡。代理和管理界面打在同一个二进制里：HTTP/HTTPS 流量走代理端口，配置走管理端口。
+[English](README.md) | [中文](README_ZH.md)
 
-## 功能
+Reverse proxy and load balancer built on [Pingora](https://github.com/cloudflare/pingora). The proxy and admin UI ship in one binary: HTTP/HTTPS traffic uses the proxy ports; configuration uses the admin port.
 
-- HTTP / HTTPS 反向代理，按主机名、路径、方法路由
-- 后端服务组：加权选择；每个后端可单独选 HTTP/HTTPS；端口可留空（HTTP 默认 80，HTTPS 默认 443）；SNI 可留空，连接时使用后端地址
-- 主机配置：可同时开启 HTTP 和 HTTPS；HTTPS 需选证书；两者都开时支持 HTTP 转 HTTPS
-- 证书：手动上传 PEM，或 Let's Encrypt 自动签发（HTTP-01 / DNS-01）；泛域名只能走 DNS-01
-- DNS 提供商：阿里云、万网、GoDaddy（用于 DNS-01）
-- 每天 0:00–1:00 随机时间自动续签
-- TCP / UDP 端口转发
-- Vue 3 + Element Plus 管理界面，由同一进程提供静态文件
+## Features
 
-## 架构
+- HTTP / HTTPS reverse proxy with host, path, and method routing
+- Upstreams: weighted selection; HTTP/HTTPS per backend; empty port defaults to 80/443; empty SNI uses the backend address
+- Hosts: HTTP and HTTPS can both be enabled; HTTPS requires a certificate; HTTP-to-HTTPS redirect when both are on
+- Certificates: upload PEM, or issue with Let's Encrypt (HTTP-01 / DNS-01); wildcards require DNS-01
+- DNS providers: Alibaba Cloud, Wanwang, GoDaddy (for DNS-01)
+- Automatic renewal at a random time between 00:00 and 01:00
+- TCP / UDP port forwarding
+- Vue 3 + Element Plus admin UI, served by the same process (Chinese/English)
 
-| 组件 | 说明 |
+## Architecture
+
+| Component | Role |
 | --- | --- |
-| `flb` | 可执行文件（`crates/flb-cli`） |
-| Pingora | HTTP/HTTPS 代理 |
-| Axum | 管理 API `/api` + 前端静态资源 |
-| 存储 | `{data-dir}/config.json` |
+| `flb` | Binary (`crates/flb-cli`) |
+| Pingora | HTTP/HTTPS proxy |
+| Axum | Admin API `/api` + static UI |
+| Storage | `{data-dir}/config.json` |
 
-默认端口：
+Default ports:
 
-| 端口 | 用途 |
+| Port | Role |
 | --- | --- |
-| `80` | HTTP 代理 |
-| `443` | HTTPS 代理 |
-| `9000` | 管理界面 |
+| `80` | HTTP proxy |
+| `443` | HTTPS proxy |
+| `9000` | Admin UI |
 
-## 要求
+## Requirements
 
-- Rust stable（workspace edition 2024）
-- Node.js 20+、[pnpm](https://pnpm.io/) 10
-- 系统 OpenSSL（Pingora）
+- Rust stable (workspace edition 2024)
+- Node.js 20+ and [pnpm](https://pnpm.io/) 10
+- System OpenSSL (Pingora)
 
-## 本地运行
+## Run locally
 
-先编译前端，再启动 `flb`：
+Build the frontend, then start `flb`:
 
 ```bash
 cd frontend
@@ -54,15 +56,15 @@ cargo run -p flb -- \
   --https-listen 0.0.0.0:443
 ```
 
-浏览器打开 `http://127.0.0.1:9000`。
+Open `http://127.0.0.1:9000`.
 
-开发前端时：
+Frontend development:
 
 ```bash
-# 终端 1：代理与 API
+# terminal 1: proxy and API
 cargo run -p flb -- --www-dir frontend/dist --data-dir data --admin-listen 127.0.0.1:9000
 
-# 终端 2：Vite，/api 会转到 9000
+# terminal 2: Vite proxies /api to 9000
 cd frontend && pnpm run dev
 ```
 
@@ -72,48 +74,48 @@ cd frontend && pnpm run dev
 docker compose up -d --build
 ```
 
-映射：
+Mappings:
 
-| 宿主机 | 容器 |
+| Host | Container |
 | --- | --- |
-| `22080` | `80` HTTP 代理 |
-| `22443` | `443` HTTPS 代理 |
-| `22081` | `9000` 管理界面 |
+| `22080` | `80` HTTP proxy |
+| `22443` | `443` HTTPS proxy |
+| `22081` | `9000` admin UI |
 | `./data` | `/flb/data` |
 
-管理界面：`http://127.0.0.1:22081`。
+Admin UI: `http://127.0.0.1:22081`.
 
-本地已编好 musl 二进制时，可用 `docker-compose.local.yaml`，挂载 `target/x86_64-unknown-linux-musl/release/flb` 和 `frontend/dist`，不必重新构建镜像。
+If you already have a musl binary, `docker-compose.local.yaml` mounts `target/x86_64-unknown-linux-musl/release/flb` and `frontend/dist` without rebuilding the image.
 
-## 命令行
+## CLI
 
-参数也可用同名环境变量。
+Flags also accept matching environment variables.
 
-| 参数 | 环境变量 | 默认 | 说明 |
+| Flag | Env | Default | Description |
 | --- | --- | --- | --- |
-| `--admin-listen` | `FLB_ADMIN_LISTEN` | `0.0.0.0:9000` | 管理界面 |
-| `--http-listen` | `FLB_HTTP_LISTEN` | `0.0.0.0:80` | HTTP 代理 |
-| `--https-listen` | `FLB_HTTPS_LISTEN` | `0.0.0.0:443` | HTTPS 代理 |
-| `--data-dir` | `FLB_DATA_DIR` | `data` | 配置与 ACME 数据 |
-| `--www-dir` | `FLB_WWW_DIR` | `www` | 前端静态目录 |
-| `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt 预发环境 |
+| `--admin-listen` | `FLB_ADMIN_LISTEN` | `0.0.0.0:9000` | Admin UI |
+| `--http-listen` | `FLB_HTTP_LISTEN` | `0.0.0.0:80` | HTTP proxy |
+| `--https-listen` | `FLB_HTTPS_LISTEN` | `0.0.0.0:443` | HTTPS proxy |
+| `--data-dir` | `FLB_DATA_DIR` | `data` | Config and ACME data |
+| `--www-dir` | `FLB_WWW_DIR` | `www` | Frontend static files |
+| `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt staging |
 
-日志：`RUST_LOG=info`（或 `debug`）。
+Logs: `RUST_LOG=info` (or `debug`).
 
-## 数据目录
+## Data directory
 
-`--data-dir`（容器内 `/flb/data`）大致如下：
+`--data-dir` (container path `/flb/data`):
 
 ```text
 data/
-  config.json              # 证书、域名、后端、主机、数据流
+  config.json              # certs, domains, upstreams, hosts, streams
   letsencrypt/
-    acme-account.json      # Let's Encrypt 账号
+    acme-account.json      # Let's Encrypt account
 ```
 
-签发后的证书内容写在 `config.json`，不单独落成 PEM 文件。
+Issued certificate PEMs are stored in `config.json`, not as separate files.
 
-## 开发
+## Development
 
 ```bash
 cargo fmt --all --

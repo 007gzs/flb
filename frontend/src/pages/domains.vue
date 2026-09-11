@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import type { Certificate, DnsProvider, Domain } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type Certificate, type DnsProvider, type Domain } from '~/api'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { api } from '~/api'
 
+const { t } = useI18n()
 const list = ref<Domain[]>([])
 const certs = ref<Certificate[]>([])
 const providers = ref<DnsProvider[]>([])
@@ -56,7 +59,7 @@ function openEdit(row: Domain) {
 
 async function save() {
   if (isWildcard.value && form.mode === 'acme' && form.challenge === 'http01') {
-    ElMessage.error('泛域名不支持 HTTP 验证')
+    ElMessage.error(t('domains.wildcardHttp'))
     return
   }
   const body = {
@@ -71,7 +74,7 @@ async function save() {
       await api.domains.update(editing.value, body)
     else
       await api.domains.create(body)
-    ElMessage.success(form.mode === 'acme' && !editing.value ? '已提交，正在申请证书' : '已保存')
+    ElMessage.success(form.mode === 'acme' && !editing.value ? t('domains.issuing') : t('common.saved'))
     visible.value = false
     await load()
   }
@@ -81,10 +84,10 @@ async function save() {
 }
 
 async function remove(row: Domain) {
-  await ElMessageBox.confirm(`删除域名 ${row.name}？`, '确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('domains.deleteConfirm', { name: row.name }), t('common.confirm'), { type: 'warning' })
   try {
     await api.domains.remove(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('common.deleted'))
     await load()
   }
   catch (e) {
@@ -96,7 +99,7 @@ async function renew(row: Domain) {
   renewing.value = row.id
   try {
     await api.domains.renew(row.id)
-    ElMessage.success('续签完成')
+    ElMessage.success(t('domains.renewed'))
     await load()
   }
   catch (e) {
@@ -117,63 +120,83 @@ onMounted(load)
 <template>
   <div class="page-card">
     <div class="page-header">
-      <span>域名证书</span>
-      <el-button type="primary" @click="openCreate">添加域名</el-button>
+      <span>{{ t('domains.title') }}</span>
+      <el-button type="primary" @click="openCreate">
+        {{ t('domains.add') }}
+      </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="name" label="域名" min-width="180" />
-      <el-table-column label="证书方式" width="130">
-        <template #default="{ row }">{{ row.mode === 'acme' ? 'Let\'s Encrypt' : '手动' }}</template>
+      <el-table-column prop="name" :label="t('domains.domain')" min-width="180" />
+      <el-table-column :label="t('domains.mode')" width="130">
+        <template #default="{ row }">
+          {{ row.mode === 'acme' ? t('domains.acme') : t('domains.manual') }}
+        </template>
       </el-table-column>
-      <el-table-column label="验证方式" width="120">
+      <el-table-column :label="t('domains.challenge')" width="120">
         <template #default="{ row }">
           {{ row.challenge === 'dns01' ? 'DNS' : row.challenge === 'http01' ? 'HTTP' : '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="110">
+      <el-table-column :label="t('domains.status')" width="110">
         <template #default="{ row }">
           <el-tag :type="row.status === 'issued' ? 'success' : row.status === 'failed' ? 'danger' : 'info'">
             {{ row.status || '-' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="证书" min-width="140">
-        <template #default="{ row }">{{ certName(row.certId) }}</template>
-      </el-table-column>
-      <el-table-column prop="expiresAt" label="过期时间" min-width="180" />
-      <el-table-column prop="lastError" label="错误" min-width="180" show-overflow-tooltip />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column :label="t('domains.cert')" min-width="140">
         <template #default="{ row }">
-          <el-button v-if="row.mode === 'acme'" link type="success" :loading="renewing === row.id" @click="renew(row)">续签</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          {{ certName(row.certId) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="expiresAt" :label="t('domains.expiresAt')" min-width="180" />
+      <el-table-column prop="lastError" :label="t('domains.error')" min-width="180" show-overflow-tooltip />
+      <el-table-column :label="t('common.actions')" width="220" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.mode === 'acme'" link type="success" :loading="renewing === row.id" @click="renew(row)">
+            {{ t('domains.renew') }}
+          </el-button>
+          <el-button link type="primary" @click="openEdit(row)">
+            {{ t('common.edit') }}
+          </el-button>
+          <el-button link type="danger" @click="remove(row)">
+            {{ t('common.delete') }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="visible" :title="editing ? '编辑域名' : '添加域名'" width="560px">
-      <el-form label-width="120px">
-        <el-form-item label="域名">
-          <el-input v-model="form.name" placeholder="example.com 或 *.example.com" />
+    <el-dialog v-model="visible" :title="editing ? t('domains.edit') : t('domains.add')" width="560px">
+      <el-form label-width="140px">
+        <el-form-item :label="t('domains.domain')">
+          <el-input v-model="form.name" :placeholder="t('domains.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="证书方式">
+        <el-form-item :label="t('domains.mode')">
           <el-radio-group v-model="form.mode">
-            <el-radio value="acme">自动 Let's Encrypt</el-radio>
-            <el-radio value="manual">手动选择证书</el-radio>
+            <el-radio value="acme">
+              {{ t('domains.acmeAuto') }}
+            </el-radio>
+            <el-radio value="manual">
+              {{ t('domains.manualSelect') }}
+            </el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="form.mode === 'manual'" label="证书">
+        <el-form-item v-if="form.mode === 'manual'" :label="t('domains.cert')">
           <el-select v-model="form.certId" class="w-full" filterable>
             <el-option v-for="c in certs" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
         <template v-if="form.mode === 'acme'">
-          <el-form-item label="验证方式">
+          <el-form-item :label="t('domains.challenge')">
             <el-radio-group v-model="form.challenge">
-              <el-radio value="http01" :disabled="isWildcard">HTTP 验证</el-radio>
-              <el-radio value="dns01">DNS 提供商</el-radio>
+              <el-radio value="http01" :disabled="isWildcard">
+                {{ t('domains.challengeHttp') }}
+              </el-radio>
+              <el-radio value="dns01">
+                {{ t('domains.challengeDns') }}
+              </el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item v-if="form.challenge === 'dns01'" label="DNS 提供商">
+          <el-form-item v-if="form.challenge === 'dns01'" :label="t('nav.dns')">
             <el-select v-model="form.dnsProviderId" class="w-full">
               <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
@@ -181,8 +204,12 @@ onMounted(load)
         </template>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="save">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

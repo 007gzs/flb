@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import type { StreamConfig } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, type StreamConfig } from '~/api'
+import { onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { api } from '~/api'
 
+const { t } = useI18n()
 const list = ref<StreamConfig[]>([])
 const loading = ref(false)
 const visible = ref(false)
@@ -52,7 +55,7 @@ async function save() {
       await api.streams.update(editing.value, body)
     else
       await api.streams.create(body)
-    ElMessage.success('已保存')
+    ElMessage.success(t('common.saved'))
     visible.value = false
     await load()
   }
@@ -62,10 +65,10 @@ async function save() {
 }
 
 async function remove(row: StreamConfig) {
-  await ElMessageBox.confirm(`删除数据流 ${row.name}？`, '确认', { type: 'warning' })
+  await ElMessageBox.confirm(t('streams.deleteConfirm', { name: row.name }), t('common.confirm'), { type: 'warning' })
   try {
     await api.streams.remove(row.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('common.deleted'))
     await load()
   }
   catch (e) {
@@ -79,46 +82,60 @@ onMounted(load)
 <template>
   <div class="page-card">
     <div class="page-header">
-      <span>TCP / UDP 数据流</span>
-      <el-button type="primary" @click="openCreate">添加数据流</el-button>
+      <span>{{ t('streams.title') }}</span>
+      <el-button type="primary" @click="openCreate">
+        {{ t('streams.add') }}
+      </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="name" label="名称" />
-      <el-table-column prop="protocol" label="协议" width="90" />
-      <el-table-column prop="listenPort" label="监听端口" width="110" />
-      <el-table-column prop="targetIp" label="目标 IP" />
-      <el-table-column prop="targetPort" label="目标端口" width="110" />
-      <el-table-column label="操作" width="160">
+      <el-table-column prop="name" :label="t('common.name')" />
+      <el-table-column prop="protocol" :label="t('streams.protocol')" width="90" />
+      <el-table-column prop="listenPort" :label="t('streams.listenPort')" width="110" />
+      <el-table-column prop="targetIp" :label="t('streams.targetIp')" />
+      <el-table-column prop="targetPort" :label="t('streams.targetPort')" width="110" />
+      <el-table-column :label="t('common.actions')" width="160">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          <el-button link type="primary" @click="openEdit(row)">
+            {{ t('common.edit') }}
+          </el-button>
+          <el-button link type="danger" @click="remove(row)">
+            {{ t('common.delete') }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="visible" :title="editing ? '编辑数据流' : '添加数据流'" width="520px">
+    <el-dialog v-model="visible" :title="editing ? t('streams.edit') : t('streams.add')" width="520px">
       <el-form label-width="110px">
-        <el-form-item label="名称">
+        <el-form-item :label="t('common.name')">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="协议">
+        <el-form-item :label="t('streams.protocol')">
           <el-radio-group v-model="form.protocol">
-            <el-radio value="tcp">TCP</el-radio>
-            <el-radio value="udp">UDP</el-radio>
+            <el-radio value="tcp">
+              TCP
+            </el-radio>
+            <el-radio value="udp">
+              UDP
+            </el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="监听端口">
+        <el-form-item :label="t('streams.listenPort')">
           <el-input-number v-model="form.listenPort" :min="1" :max="65535" />
         </el-form-item>
-        <el-form-item label="目标 IP">
+        <el-form-item :label="t('streams.targetIp')">
           <el-input v-model="form.targetIp" />
         </el-form-item>
-        <el-form-item label="目标端口">
+        <el-form-item :label="t('streams.targetPort')">
           <el-input-number v-model="form.targetPort" :min="1" :max="65535" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="visible = false">
+          {{ t('common.cancel') }}
+        </el-button>
+        <el-button type="primary" @click="save">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
