@@ -1,4 +1,5 @@
 mod schedule;
+mod ui;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -74,12 +75,16 @@ pub async fn run(
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    if settings.www_dir.exists() {
-        let index = settings.www_dir.join("index.html");
+    let disk_index = settings.www_dir.join("index.html");
+    if disk_index.is_file() {
+        tracing::info!(dir = %settings.www_dir.display(), "serving admin UI from disk");
         let static_files = ServeDir::new(&settings.www_dir)
             .append_index_html_on_directories(true)
-            .fallback(ServeFile::new(index));
+            .fallback(ServeFile::new(disk_index));
         app = app.fallback_service(static_files);
+    } else {
+        tracing::info!("serving embedded admin UI");
+        app = app.fallback(get(ui::embedded_ui));
     }
 
     let listener = tokio::net::TcpListener::bind(settings.admin_listen).await?;

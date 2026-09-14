@@ -23,7 +23,7 @@ struct Cli {
     /// 配置与证书数据目录
     #[arg(long, env = "FLB_DATA_DIR", default_value = "data")]
     data_dir: PathBuf,
-    /// 前端静态资源目录
+    /// 前端静态资源目录（存在 index.html 时覆盖内嵌 UI）
     #[arg(long, env = "FLB_WWW_DIR", default_value = "www")]
     www_dir: PathBuf,
     /// 使用 Let's Encrypt 预发环境

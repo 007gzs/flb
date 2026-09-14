@@ -21,7 +21,7 @@ Reverse proxy and load balancer built on [Pingora](https://github.com/cloudflare
 | --- | --- |
 | `flb` | Binary (`crates/flb-cli`) |
 | Pingora | HTTP/HTTPS proxy |
-| Axum | Admin API `/api` + static UI |
+| Axum | Admin API `/api` + embedded UI |
 | Storage | `{data-dir}/config.json` |
 
 Default ports:
@@ -40,7 +40,7 @@ Default ports:
 
 ## Run locally
 
-Build the frontend, then start `flb`:
+Build the frontend first so `cargo` can embed `frontend/dist` into the binary:
 
 ```bash
 cd frontend
@@ -49,20 +49,19 @@ pnpm run build
 cd ..
 
 cargo run -p flb -- \
-  --www-dir frontend/dist \
   --data-dir data \
   --admin-listen 0.0.0.0:9000 \
   --http-listen 0.0.0.0:80 \
   --https-listen 0.0.0.0:443
 ```
 
-Open `http://127.0.0.1:9000`.
+Open `http://127.0.0.1:9000`. After changing the UI, run `pnpm run build` and rebuild `flb`. To serve files from disk instead of the embed, pass `--www-dir` pointing at a directory that contains `index.html`.
 
 Frontend development:
 
 ```bash
 # terminal 1: proxy and API
-cargo run -p flb -- --www-dir frontend/dist --data-dir data --admin-listen 127.0.0.1:9000
+cargo run -p flb -- --data-dir data --admin-listen 127.0.0.1:9000
 
 # terminal 2: Vite proxies /api to 9000
 cd frontend && pnpm run dev
@@ -85,7 +84,7 @@ Mappings:
 
 Admin UI: `http://127.0.0.1:22081`.
 
-If you already have a musl binary, `docker-compose.local.yaml` mounts `target/x86_64-unknown-linux-musl/release/flb` and `frontend/dist` without rebuilding the image.
+If you already have a musl binary, `docker-compose.local.yaml` mounts `target/x86_64-unknown-linux-musl/release/flb` without rebuilding the image. The admin UI is already inside that binary.
 
 ## CLI
 
@@ -97,7 +96,7 @@ Flags also accept matching environment variables.
 | `--http-listen` | `FLB_HTTP_LISTEN` | `0.0.0.0:80` | HTTP proxy |
 | `--https-listen` | `FLB_HTTPS_LISTEN` | `0.0.0.0:443` | HTTPS proxy |
 | `--data-dir` | `FLB_DATA_DIR` | `data` | Config and ACME data |
-| `--www-dir` | `FLB_WWW_DIR` | `www` | Frontend static files |
+| `--www-dir` | `FLB_WWW_DIR` | `www` | Override embedded UI when `index.html` exists |
 | `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt staging |
 
 Logs: `RUST_LOG=info` (or `debug`).

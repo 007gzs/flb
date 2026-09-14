@@ -21,7 +21,7 @@
 | --- | --- |
 | `flb` | 可执行文件（`crates/flb-cli`） |
 | Pingora | HTTP/HTTPS 代理 |
-| Axum | 管理 API `/api` + 前端静态资源 |
+| Axum | 管理 API `/api` + 内嵌前端 |
 | 存储 | `{data-dir}/config.json` |
 
 默认端口：
@@ -40,7 +40,7 @@
 
 ## 本地运行
 
-先编译前端，再启动 `flb`：
+先编译前端，`cargo` 会把 `frontend/dist` 打进二进制：
 
 ```bash
 cd frontend
@@ -49,20 +49,19 @@ pnpm run build
 cd ..
 
 cargo run -p flb -- \
-  --www-dir frontend/dist \
   --data-dir data \
   --admin-listen 0.0.0.0:9000 \
   --http-listen 0.0.0.0:80 \
   --https-listen 0.0.0.0:443
 ```
 
-浏览器打开 `http://127.0.0.1:9000`。
+浏览器打开 `http://127.0.0.1:9000`。改完前端后需要再执行 `pnpm run build` 并重新编译 `flb`。若目录里有 `index.html`，可用 `--www-dir` 覆盖内嵌界面。
 
 开发前端时：
 
 ```bash
 # 终端 1：代理与 API
-cargo run -p flb -- --www-dir frontend/dist --data-dir data --admin-listen 127.0.0.1:9000
+cargo run -p flb -- --data-dir data --admin-listen 127.0.0.1:9000
 
 # 终端 2：Vite，/api 会转到 9000
 cd frontend && pnpm run dev
@@ -85,7 +84,7 @@ docker compose up -d --build
 
 管理界面：`http://127.0.0.1:22081`。
 
-本地已编好 musl 二进制时，可用 `docker-compose.local.yaml`，挂载 `target/x86_64-unknown-linux-musl/release/flb` 和 `frontend/dist`，不必重新构建镜像。
+本地已编好 musl 二进制时，可用 `docker-compose.local.yaml`，挂载 `target/x86_64-unknown-linux-musl/release/flb`，不必重新构建镜像。管理界面已打进该二进制。
 
 ## 命令行
 
@@ -97,7 +96,7 @@ docker compose up -d --build
 | `--http-listen` | `FLB_HTTP_LISTEN` | `0.0.0.0:80` | HTTP 代理 |
 | `--https-listen` | `FLB_HTTPS_LISTEN` | `0.0.0.0:443` | HTTPS 代理 |
 | `--data-dir` | `FLB_DATA_DIR` | `data` | 配置与 ACME 数据 |
-| `--www-dir` | `FLB_WWW_DIR` | `www` | 前端静态目录 |
+| `--www-dir` | `FLB_WWW_DIR` | `www` | 目录内有 `index.html` 时覆盖内嵌界面 |
 | `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt 预发环境 |
 
 日志：`RUST_LOG=info`（或 `debug`）。

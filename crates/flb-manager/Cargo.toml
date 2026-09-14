@@ -22,6 +22,7 @@ flb-core = { path = "../flb-core" }
 flb-store = { path = "../flb-store" }
 rand = { workspace = true }
 regex = { workspace = true }
+rust-embed = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
