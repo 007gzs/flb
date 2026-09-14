@@ -1,0 +1,10 @@
+FROM debian:bullseye-slim
+WORKDIR /flb
+ARG FILE=flb
+ARG VERSION
+ARG TARGETARCH
+COPY dist/${FILE}-${VERSION}-${TARGETARCH}-unknown-linux-musl /bin/flb
+RUN chmod +x /bin/flb && mkdir -p /flb/data/
+EXPOSE 80 443 9000
+VOLUME /flb/data/
+CMD ["flb", "--data-dir", "/flb/data"]
