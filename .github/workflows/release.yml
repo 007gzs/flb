@@ -8,13 +8,12 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-
-  cross_build:
+  prepare:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.vars.outputs.version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -33,74 +32,150 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-      - name: Build Cross binaries
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 1
+
+  cross_build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            bin: flb
+            suffix: ""
+          - target: aarch64-unknown-linux-musl
+            bin: flb
+            suffix: ""
+          - target: x86_64-pc-windows-gnullvm
+            bin: flb.exe
+            suffix: ".exe"
+          - target: x86_64-apple-darwin
+            bin: flb
+            suffix: ""
+          - target: aarch64-apple-darwin
+            bin: flb
+            suffix: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+      - name: Build ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           docker run --rm \
-          -v "$(pwd):/code" \
-          -w /code \
-          -e VERSION="${{ steps.vars.outputs.version }}" \
-          ghcr.io/rust-cross/cargo-zigbuild \
-          bash -ec '
-            rustup update stable
-            rustup default stable
-            rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnullvm x86_64-apple-darwin aarch64-apple-darwin
-            apt-get update && apt-get install -y cmake
-            ls -la frontend/dist
-            cargo zigbuild --release --target x86_64-unknown-linux-musl
-            cargo zigbuild --release --target aarch64-unknown-linux-musl
-            cargo zigbuild --release --target x86_64-pc-windows-gnullvm
-            cargo zigbuild --release --target x86_64-apple-darwin
-            cargo zigbuild --release --target aarch64-apple-darwin
-            mkdir -p dist
-            file=flb
-            file_prefix=dist/${file}-${VERSION}-
-            cp -a target/x86_64-unknown-linux-musl/release/${file} ${file_prefix}x86_64-unknown-linux-musl
-            cp -a target/aarch64-unknown-linux-musl/release/${file} ${file_prefix}aarch64-unknown-linux-musl
-            cp -a target/x86_64-pc-windows-gnullvm/release/${file}.exe ${file_prefix}x86_64-pc-windows-gnullvm.exe
-            cp -a target/aarch64-pc-windows-gnullvm/release/${file}.exe ${file_prefix}aarch64-pc-windows-gnullvm.exe
-            cp -a target/x86_64-apple-darwin/release/${file} ${file_prefix}x86_64-apple-darwin
-            cp -a target/aarch64-apple-darwin/release/${file} ${file_prefix}aarch64-apple-darwin
-          '
-      - name: Show dist files
-        run: ls -lh dist
-      - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
+            -v "$(pwd):/code" \
+            -w /code \
+            -e TARGET \
+            ghcr.io/rust-cross/cargo-zigbuild \
+            bash -ec '
+              rustup update stable
+              rustup default stable
+              rustup target add "$TARGET"
+              apt-get update && apt-get install -y cmake
+              cargo zigbuild --release --target "$TARGET"
+            '
+      - name: Package binary
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p dist
+          src="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          dest="dist/flb-${VERSION}-${{ matrix.target }}${{ matrix.suffix }}"
+          cp -a "$src" "$dest"
+          ls -lh "$dest"
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-binaries
+          name: dist-binaries-${{ matrix.target }}
           path: dist/
           retention-days: 1
 
+  verify_cross_build:
+    needs: [prepare, cross_build]
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all matrix jobs to succeed
+        env:
+          RESULT: ${{ needs.cross_build.result }}
+        run: |
+          echo "cross_build result: ${RESULT}"
+          if [ "${RESULT}" != "success" ]; then
+            echo "One or more architecture/OS builds failed; skip publish."
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-binaries-*
+          merge-multiple: true
+          path: dist/
+      - name: Verify all packaged binaries exist
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            "flb-${VERSION}-x86_64-unknown-linux-musl" \
+            "flb-${VERSION}-aarch64-unknown-linux-musl" \
+            "flb-${VERSION}-x86_64-pc-windows-gnullvm.exe" \
+            "flb-${VERSION}-x86_64-apple-darwin" \
+            "flb-${VERSION}-aarch64-apple-darwin"
+          do
+            if [ ! -f "dist/${name}" ]; then
+              echo "missing: ${name}"
+              missing=1
+            else
+              ls -lh "dist/${name}"
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
+            echo "Packaging incomplete; skip publish."
+            ls -la dist || true
+            exit 1
+          fi
+
   publish_release:
-    needs: cross_build
+    needs: [prepare, verify_cross_build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: dist-binaries
+          pattern: dist-binaries-*
+          merge-multiple: true
           path: dist/
       - name: Create release and upload assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v${{ needs.cross_build.outputs.version }}" dist/* \
-          --title "v${{ needs.cross_build.outputs.version }}" \
-          --generate-notes
+          ls -lh dist
+          gh release create "v${{ needs.prepare.outputs.version }}" dist/* \
+            --title "v${{ needs.prepare.outputs.version }}" \
+            --generate-notes
 
   publish_docker_image:
-    needs: cross_build
+    needs: [prepare, verify_cross_build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: dist-binaries
+          pattern: dist-binaries-*
+          merge-multiple: true
           path: dist/
       - name: Map musl binaries to Docker TARGETARCH names
         env:
-          VERSION: ${{ needs.cross_build.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           file=flb
           cp -a "dist/${file}-${VERSION}-x86_64-unknown-linux-musl" \
@@ -125,8 +200,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             FILE=flb
-            VERSION=${{ needs.cross_build.outputs.version }}
+            VERSION=${{ needs.prepare.outputs.version }}
           tags: |
             007gzs/flb:latest
-            007gzs/flb:${{ needs.cross_build.outputs.version }}
-
+            007gzs/flb:${{ needs.prepare.outputs.version }}
