@@ -6,8 +6,8 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - ./data:/flb/data
     ports:
-      - "22080:80"
-      - "22443:443"
-      - "22081:9000"
+      - "80:80"
+      - "43:443"
+      - "127.0.0.1:9000:9000"
     restart: unless-stopped
 
