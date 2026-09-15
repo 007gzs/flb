@@ -77,12 +77,12 @@ Mappings:
 
 | Host | Container |
 | --- | --- |
-| `22080` | `80` HTTP proxy |
-| `22443` | `443` HTTPS proxy |
-| `22081` | `9000` admin UI |
+| `80` | `80` HTTP proxy |
+| `443` | `443` HTTPS proxy |
+| `9000` | `9000` admin UI |
 | `./data` | `/flb/data` |
 
-Admin UI: `http://127.0.0.1:22081`.
+Admin UI: `http://127.0.0.1:9000`.
 
 If you already have a musl binary, `docker-compose.local.yaml` mounts `target/x86_64-unknown-linux-musl/release/flb` without rebuilding the image. The admin UI is already inside that binary.
 
@@ -126,4 +126,5 @@ cd frontend && pnpm run typecheck && pnpm run build
 
 ## License
 
-MIT
+MIT OR Apache-2.0
+

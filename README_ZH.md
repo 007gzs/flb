@@ -77,12 +77,12 @@ docker compose up -d --build
 
 | 宿主机 | 容器 |
 | --- | --- |
-| `22080` | `80` HTTP 代理 |
-| `22443` | `443` HTTPS 代理 |
-| `22081` | `9000` 管理界面 |
+| `80` | `80` HTTP 代理 |
+| `443` | `443` HTTPS 代理 |
+| `9000` | `9000` 管理界面 |
 | `./data` | `/flb/data` |
 
-管理界面：`http://127.0.0.1:22081`。
+管理界面：`http://127.0.0.1:9000`。
 
 本地已编好 musl 二进制时，可用 `docker-compose.local.yaml`，挂载 `target/x86_64-unknown-linux-musl/release/flb`，不必重新构建镜像。管理界面已打进该二进制。
 
@@ -126,4 +126,4 @@ cd frontend && pnpm run typecheck && pnpm run build
 
 ## License
 
-MIT
+MIT OR Apache-2.0
