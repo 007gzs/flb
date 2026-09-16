@@ -21,9 +21,8 @@ async function load() {
 onMounted(load)
 
 const cards = computed(() => [
-  { key: 'certs' as const, label: t('nav.certs'), path: '/certs' },
+  { key: 'domains' as const, label: t('nav.certs'), path: '/certs' },
   { key: 'dnsProviders' as const, label: t('nav.dns'), path: '/dns' },
-  { key: 'domains' as const, label: t('nav.domains'), path: '/domains' },
   { key: 'upstreams' as const, label: t('nav.upstreams'), path: '/upstreams' },
   { key: 'hosts' as const, label: t('overview.hosts'), path: '/hosts' },
   { key: 'streams' as const, label: t('nav.streams'), path: '/streams' },

@@ -6,7 +6,6 @@ import {
   FolderOpened,
   House,
   Key,
-  Link,
   Monitor,
   Promotion,
 } from '@element-plus/icons-vue'
@@ -20,14 +19,13 @@ import { setLocale } from '~/i18n'
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const active = computed(() => route.path)
+const active = computed(() => (route.path === '/domains' ? '/certs' : route.path))
 const epLocale = computed(() => (locale.value === 'zh-CN' ? zhCn : en))
 
 const menus = computed(() => [
   { path: '/', label: t('nav.overview'), icon: House },
   { path: '/certs', label: t('nav.certs'), icon: Key },
   { path: '/dns', label: t('nav.dns'), icon: Promotion },
-  { path: '/domains', label: t('nav.domains'), icon: Link },
   { path: '/upstreams', label: t('nav.upstreams'), icon: Connection },
   { path: '/hosts', label: t('nav.hosts'), icon: Monitor },
   { path: '/streams', label: t('nav.streams'), icon: FolderOpened },

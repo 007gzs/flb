@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { Certificate, HeaderRewrite, Host, RouteRule, Upstream } from '~/api'
+import type { Certificate, Domain, HeaderRewrite, Host, RouteRule, Upstream } from '~/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '~/api'
 
@@ -10,6 +10,7 @@ const { t } = useI18n()
 const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 const list = ref<Host[]>([])
 const certs = ref<Certificate[]>([])
+const domains = ref<Domain[]>([])
 const upstreams = ref<Upstream[]>([])
 const loading = ref(false)
 const visible = ref(false)
@@ -62,12 +63,31 @@ function onProtocolsChange() {
     form.forceHttps = false
 }
 
+const certOptions = computed(() => {
+  const seen = new Set<string>()
+  const options: { id: string, label: string }[] = []
+  for (const domain of domains.value) {
+    if (!domain.certId || seen.has(domain.certId))
+      continue
+    seen.add(domain.certId)
+    const source = domain.mode === 'acme' ? t('certs.acme') : t('certs.manual')
+    options.push({ id: domain.certId, label: `${domain.name} (${source})` })
+  }
+  for (const cert of certs.value) {
+    if (seen.has(cert.id))
+      continue
+    options.push({ id: cert.id, label: cert.name })
+  }
+  return options
+})
+
 async function load() {
   loading.value = true
   try {
-    ;[list.value, certs.value, upstreams.value] = await Promise.all([
+    ;[list.value, certs.value, domains.value, upstreams.value] = await Promise.all([
       api.hosts.list(),
       api.certs.list(),
+      api.domains.list(),
       api.upstreams.list(),
     ])
   }
@@ -231,7 +251,7 @@ onMounted(load)
         </el-form-item>
         <el-form-item v-if="hasProtocol('https')" :label="t('hosts.cert')">
           <el-select v-model="form.certId" class="w-full" filterable :placeholder="t('hosts.selectCert')">
-            <el-option v-for="c in certs" :key="c.id" :label="c.name" :value="c.id" />
+            <el-option v-for="c in certOptions" :key="c.id" :label="c.label" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="hasProtocol('http') && hasProtocol('https')" :label="t('hosts.forceHttps')">

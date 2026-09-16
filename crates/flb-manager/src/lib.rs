@@ -281,19 +281,38 @@ struct DomainInput {
     name: String,
     mode: CertMode,
     cert_id: Option<String>,
+    cert_pem: Option<String>,
+    key_pem: Option<String>,
     challenge: Option<AcmeChallenge>,
     dns_provider_id: Option<String>,
 }
 
-fn validate_domain_input(input: &DomainInput) -> ApiResult<()> {
+fn pem_pair(input: &DomainInput) -> ApiResult<Option<(&str, &str)>> {
+    let pem = input.cert_pem.as_deref().unwrap_or("").trim();
+    let key = input.key_pem.as_deref().unwrap_or("").trim();
+    if pem.is_empty() && key.is_empty() {
+        return Ok(None);
+    }
+    if pem.is_empty() || key.is_empty() {
+        return Err(ApiError::bad("手动模式需要同时提供证书和私钥"));
+    }
+    Ok(Some((pem, key)))
+}
+
+fn validate_domain_input(input: &DomainInput, existing: Option<&Domain>) -> ApiResult<()> {
     require_name(&input.name)?;
     if input.name.starts_with("*.") && input.challenge == Some(AcmeChallenge::Http01) {
         return Err(ApiError::bad("泛域名不支持 HTTP 验证，请使用 DNS 验证"));
     }
     match input.mode {
         CertMode::Manual => {
-            if input.cert_id.as_deref().unwrap_or("").is_empty() {
-                return Err(ApiError::bad("手动模式需要选择证书"));
+            let has_pem = pem_pair(input)?.is_some();
+            let has_cert = !input.cert_id.as_deref().unwrap_or("").is_empty()
+                || existing
+                    .and_then(|d| d.cert_id.as_deref())
+                    .is_some_and(|id| !id.is_empty());
+            if !has_pem && !has_cert {
+                return Err(ApiError::bad("手动模式需要上传证书"));
             }
         }
         CertMode::Acme => {
@@ -308,6 +327,65 @@ fn validate_domain_input(input: &DomainInput) -> ApiResult<()> {
         }
     }
     Ok(())
+}
+
+fn upsert_manual_cert(
+    state: &AppState,
+    domain_name: &str,
+    existing_cert_id: Option<&str>,
+    input: &DomainInput,
+) -> ApiResult<(Option<String>, Option<String>)> {
+    if let Some((pem, key)) = pem_pair(input)? {
+        let not_after = validate_manual_pem(pem, key).map_err(|e| ApiError::bad(e.to_string()))?;
+        let id = existing_cert_id
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .or_else(|| input.cert_id.clone().filter(|id| !id.is_empty()))
+            .unwrap_or_else(new_id);
+        let created_at = state
+            .store
+            .snapshot()
+            .cert(&id)
+            .map(|c| c.created_at.clone())
+            .unwrap_or_else(now_rfc3339);
+        state
+            .store
+            .upsert_certificate(Certificate {
+                id: id.clone(),
+                name: domain_name.to_string(),
+                cert_pem: pem.to_string(),
+                key_pem: key.to_string(),
+                not_after: not_after.clone(),
+                auto_issued: false,
+                created_at,
+            })
+            .map_err(store_err)?;
+        return Ok((Some(id), not_after));
+    }
+    let cert_id = input
+        .cert_id
+        .clone()
+        .filter(|id| !id.is_empty())
+        .or_else(|| {
+            existing_cert_id
+                .map(str::to_string)
+                .filter(|id| !id.is_empty())
+        });
+    let expires = cert_id.as_ref().and_then(|id| {
+        state
+            .store
+            .snapshot()
+            .cert(id)
+            .and_then(|c| c.not_after.clone())
+    });
+    Ok((cert_id, expires))
+}
+
+fn cleanup_unused_cert(state: &AppState, cert_id: Option<&str>) {
+    let Some(cert_id) = cert_id.filter(|id| !id.is_empty()) else {
+        return;
+    };
+    let _ = state.store.delete_certificate(cert_id);
 }
 
 async fn list_domains(State(state): State<AppState>) -> Json<Vec<Domain>> {
@@ -331,12 +409,18 @@ async fn create_domain(
     State(state): State<AppState>,
     Json(input): Json<DomainInput>,
 ) -> ApiResult<Json<Domain>> {
-    validate_domain_input(&input)?;
+    validate_domain_input(&input, None)?;
+    let name = input.name.trim().to_ascii_lowercase();
+    let (cert_id, expires_at) = if input.mode == CertMode::Manual {
+        upsert_manual_cert(&state, &name, None, &input)?
+    } else {
+        (None, None)
+    };
     let item = Domain {
         id: new_id(),
-        name: input.name.trim().to_ascii_lowercase(),
+        name,
         mode: input.mode,
-        cert_id: input.cert_id,
+        cert_id,
         challenge: input.challenge,
         dns_provider_id: input.dns_provider_id,
         status: if input.mode == CertMode::Acme {
@@ -345,21 +429,10 @@ async fn create_domain(
             "manual".into()
         },
         last_error: None,
-        expires_at: None,
+        expires_at,
         created_at: now_rfc3339(),
     };
-    if item.mode == CertMode::Manual
-        && let Some(cert) = item
-            .cert_id
-            .as_ref()
-            .and_then(|id| state.store.snapshot().cert(id).cloned())
-    {
-        let mut item = item.clone();
-        item.expires_at = cert.not_after;
-        let saved = state.store.upsert_domain(item).map_err(store_err)?;
-        return Ok(Json(saved));
-    }
-    let saved = state.store.upsert_domain(item.clone()).map_err(store_err)?;
+    let saved = state.store.upsert_domain(item).map_err(store_err)?;
     if saved.mode == CertMode::Acme {
         spawn_issue(state.clone(), saved.id.clone());
     }
@@ -371,28 +444,28 @@ async fn update_domain(
     Path(id): Path<String>,
     Json(input): Json<DomainInput>,
 ) -> ApiResult<Json<Domain>> {
-    validate_domain_input(&input)?;
     let existing = state
         .store
         .snapshot()
         .domain(&id)
         .cloned()
         .ok_or_else(|| ApiError::not_found("域名不存在"))?;
+    validate_domain_input(&input, Some(&existing))?;
+    let name = input.name.trim().to_ascii_lowercase();
     let mut item = existing.clone();
-    item.name = input.name.trim().to_ascii_lowercase();
+    item.name = name.clone();
     item.mode = input.mode;
-    item.cert_id = input.cert_id;
     item.challenge = input.challenge;
-    item.dns_provider_id = input.dns_provider_id;
+    item.dns_provider_id = input.dns_provider_id.clone();
     if item.mode == CertMode::Manual {
+        let (cert_id, expires_at) =
+            upsert_manual_cert(&state, &name, existing.cert_id.as_deref(), &input)?;
+        item.cert_id = cert_id;
         item.status = "manual".into();
-        item.expires_at = item.cert_id.as_ref().and_then(|cid| {
-            state
-                .store
-                .snapshot()
-                .cert(cid)
-                .and_then(|c| c.not_after.clone())
-        });
+        item.expires_at = expires_at;
+        item.last_error = None;
+    } else {
+        item.cert_id = existing.cert_id.clone();
     }
     let saved = state.store.upsert_domain(item).map_err(store_err)?;
     Ok(Json(saved))
@@ -402,7 +475,13 @@ async fn delete_domain(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
+    let cert_id = state
+        .store
+        .snapshot()
+        .domain(&id)
+        .and_then(|d| d.cert_id.clone());
     state.store.delete_domain(&id).map_err(store_err)?;
+    cleanup_unused_cert(&state, cert_id.as_deref());
     Ok(StatusCode::NO_CONTENT)
 }
 

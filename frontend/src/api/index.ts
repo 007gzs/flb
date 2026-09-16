@@ -21,6 +21,8 @@ export interface Domain {
   name: string
   mode: 'manual' | 'acme'
   certId?: string | null
+  certPem?: string | null
+  keyPem?: string | null
   challenge?: 'http01' | 'dns01' | null
   dnsProviderId?: string | null
   status: string
