@@ -30,6 +30,14 @@ export default {
     deleted: 'Deleted',
     type: 'Type',
   },
+  login: {
+    username: 'Username',
+    password: 'Password',
+    submit: 'Sign in',
+    logout: 'Sign out',
+    failed: 'Login failed',
+    needFields: 'Enter username and password',
+  },
   overview: {
     hosts: 'Hosts',
   },

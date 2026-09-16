@@ -12,6 +12,8 @@ pub enum StoreError {
     Io(#[from] io::Error),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("yaml: {0}")]
+    Yaml(#[from] serde_yaml::Error),
     #[error("{0}")]
     Message(String),
 }
@@ -26,24 +28,24 @@ pub struct Store {
 
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        if let Some(parent) = path.parent() {
+        let yaml_path = path.as_ref().to_path_buf();
+        let json_path = yaml_path.with_extension("json");
+        if let Some(parent) = yaml_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let data = if path.exists() {
-            let raw = fs::read_to_string(&path)?;
-            if raw.trim().is_empty() {
-                ConfigData::default()
-            } else {
-                serde_json::from_str(&raw)?
-            }
+        let data = if yaml_path.exists() {
+            load_from_path(&yaml_path)?
+        } else if json_path.exists() {
+            let data = load_from_path(&json_path)?;
+            persist_yaml(&yaml_path, &data)?;
+            data
         } else {
             let empty = ConfigData::default();
-            atomic_write(&path, &serde_json::to_vec_pretty(&empty)?)?;
+            persist_yaml(&yaml_path, &empty)?;
             empty
         };
         Ok(Self {
-            path,
+            path: yaml_path,
             data: RwLock::new(data),
             generation: AtomicU64::new(1),
         })
@@ -58,7 +60,7 @@ impl Store {
     }
 
     fn persist(&self, data: &ConfigData) -> Result<()> {
-        atomic_write(&self.path, &serde_json::to_vec_pretty(data)?)?;
+        persist_yaml(&self.path, data)?;
         self.generation.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
@@ -242,8 +244,29 @@ impl Store {
     }
 }
 
+fn load_from_path(path: &Path) -> Result<ConfigData> {
+    let raw = fs::read_to_string(path)?;
+    if raw.trim().is_empty() {
+        return Ok(ConfigData::default());
+    }
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    {
+        Ok(serde_json::from_str(&raw)?)
+    } else {
+        Ok(serde_yaml::from_str(&raw)?)
+    }
+}
+
+fn persist_yaml(path: &Path, data: &ConfigData) -> Result<()> {
+    atomic_write(path, serde_yaml::to_string(data)?.as_bytes())?;
+    Ok(())
+}
+
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension("json.tmp");
+    let tmp = path.with_extension("yaml.tmp");
     {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
@@ -261,7 +284,7 @@ mod tests {
     #[test]
     fn roundtrip_certificate() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("config.json")).unwrap();
+        let store = Store::open(dir.path().join("config.yaml")).unwrap();
         let cert = Certificate {
             id: "c1".into(),
             name: "demo".into(),
@@ -274,6 +297,20 @@ mod tests {
         store.upsert_certificate(cert.clone()).unwrap();
         assert_eq!(store.snapshot().certificates.len(), 1);
         store.delete_certificate("c1").unwrap();
+        assert!(store.snapshot().certificates.is_empty());
+        assert!(dir.path().join("config.yaml").exists());
+    }
+
+    #[test]
+    fn migrates_json_to_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.json"),
+            r#"{"certificates":[],"dnsProviders":[],"domains":[],"upstreams":[],"hosts":[],"streams":[]}"#,
+        )
+        .unwrap();
+        let store = Store::open(dir.path().join("config.yaml")).unwrap();
+        assert!(dir.path().join("config.yaml").exists());
         assert!(store.snapshot().certificates.is_empty());
     }
 }

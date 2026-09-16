@@ -1,5 +1,5 @@
 [package]
-name = "flb-store"
+name = "flb-log"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,11 +14,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-flb-core = { path = "../flb-core" }
-parking_lot = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
-thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

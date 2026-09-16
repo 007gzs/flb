@@ -93,21 +93,64 @@ export interface Stats {
   streams: number
 }
 
+const TOKEN_KEY = 'flb_token'
+
+function token(): string {
+  if (typeof window === 'undefined')
+    return ''
+  return window.localStorage.getItem(TOKEN_KEY) || ''
+}
+
+function setToken(value: string) {
+  if (typeof window === 'undefined')
+    return
+  if (value)
+    window.localStorage.setItem(TOKEN_KEY, value)
+  else
+    window.localStorage.removeItem(TOKEN_KEY)
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Content-Type'))
+    headers.set('Content-Type', 'application/json')
+  const jwt = token()
+  if (jwt)
+    headers.set('Authorization', `Bearer ${jwt}`)
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    credentials: 'same-origin',
     ...init,
+    headers,
   })
   if (res.status === 204)
     return undefined as T
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
+  if (res.status === 401 && !url.includes('/api/login')) {
+    setToken('')
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login')
+      window.location.href = '/login'
+  }
   if (!res.ok)
     throw new Error(data?.message || res.statusText)
   return data as T
 }
 
 export const api = {
+  login: async (body: { username: string, password: string }) => {
+    const data = await request<{ username: string, token: string }>('/api/login', { method: 'POST', body: JSON.stringify(body) })
+    setToken(data.token)
+    return data
+  },
+  logout: async () => {
+    try {
+      await request<void>('/api/logout', { method: 'POST' })
+    }
+    finally {
+      setToken('')
+    }
+  },
+  me: () => request<{ username: string }>('/api/me'),
   stats: () => request<Stats>('/api/stats'),
   certs: {
     list: () => request<Certificate[]>('/api/certs'),

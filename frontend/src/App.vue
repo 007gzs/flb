@@ -11,9 +11,10 @@ import {
 } from '@element-plus/icons-vue'
 import en from 'element-plus/es/locale/lang/en'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { computed } from 'vue'
+import { computed, onMounted, provide, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { api } from '~/api'
 import { setLocale } from '~/i18n'
 
 const { t, locale } = useI18n()
@@ -21,6 +22,8 @@ const route = useRoute()
 const router = useRouter()
 const active = computed(() => (route.path === '/domains' ? '/certs' : route.path))
 const epLocale = computed(() => (locale.value === 'zh-CN' ? zhCn : en))
+const isLogin = computed(() => route.path === '/login')
+const authed = ref(false)
 
 const menus = computed(() => [
   { path: '/', label: t('nav.overview'), icon: House },
@@ -34,11 +37,45 @@ const menus = computed(() => [
 function onLocale(command: string) {
   setLocale(command as AppLocale)
 }
+
+function markAuthed() {
+  authed.value = true
+}
+
+provide('markAuthed', markAuthed)
+
+async function checkSession() {
+  try {
+    await api.me()
+    authed.value = true
+    if (isLogin.value)
+      await router.replace('/')
+  }
+  catch {
+    authed.value = false
+    if (!isLogin.value)
+      await router.replace('/login')
+  }
+}
+
+async function logout() {
+  try {
+    await api.logout()
+  }
+  catch {
+    // ignore
+  }
+  authed.value = false
+  await router.replace('/login')
+}
+
+onMounted(checkSession)
 </script>
 
 <template>
   <el-config-provider :locale="epLocale" class="h-full">
-    <el-container class="h-full">
+    <router-view v-if="isLogin" />
+    <el-container v-else-if="authed" class="h-full">
       <el-aside width="220px" class="aside">
         <div class="brand">
           <div class="brand-title">
@@ -58,22 +95,27 @@ function onLocale(command: string) {
       <el-container>
         <el-header class="header">
           <span>{{ menus.find(m => m.path === active)?.label || t('app.title') }}</span>
-          <el-dropdown trigger="click" @command="onLocale">
-            <span class="lang-switch">
-              {{ locale === 'zh-CN' ? t('lang.zh') : t('lang.en') }}
-              <el-icon class="ml-4px"><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="zh-CN" :disabled="locale === 'zh-CN'">
-                  {{ t('lang.zh') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="en-US" :disabled="locale === 'en-US'">
-                  {{ t('lang.en') }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div class="header-right">
+            <el-dropdown trigger="click" @command="onLocale">
+              <span class="lang-switch">
+                {{ locale === 'zh-CN' ? t('lang.zh') : t('lang.en') }}
+                <el-icon class="ml-4px"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="zh-CN" :disabled="locale === 'zh-CN'">
+                    {{ t('lang.zh') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="en-US" :disabled="locale === 'en-US'">
+                    {{ t('lang.en') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button link type="primary" @click="logout">
+              {{ t('login.logout') }}
+            </el-button>
+          </div>
         </el-header>
         <el-main class="main">
           <router-view />
@@ -109,6 +151,11 @@ function onLocale(command: string) {
   border-bottom: 1px solid #ebeef5;
   font-size: 18px;
   font-weight: 600;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 .lang-switch {
   display: inline-flex;

@@ -1,6 +1,9 @@
 services:
   flb:
     image: 007gzs/flb
+    environment:
+      FLB_ADMIN_USER: admin
+      FLB_ADMIN_PASSWORD: admin
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro

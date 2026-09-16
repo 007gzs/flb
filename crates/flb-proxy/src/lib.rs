@@ -1,4 +1,5 @@
 use flb_config::Settings;
+use flb_log::FileLogger;
 use flb_plugin::PluginRegistry;
 use flb_store::Store;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub struct ProxyState {
     pub acme_http01: Arc<dashmap::DashMap<String, String>>,
     pub plugins: Arc<PluginRegistry>,
     pub settings: Arc<Settings>,
+    pub access_log: FileLogger,
 }
 
 impl ProxyState {
@@ -23,12 +25,14 @@ impl ProxyState {
         store: Arc<Store>,
         acme_http01: Arc<dashmap::DashMap<String, String>>,
         settings: Arc<Settings>,
+        access_log: FileLogger,
     ) -> Self {
         Self {
             store,
             acme_http01,
             plugins: Arc::new(PluginRegistry::new()),
             settings,
+            access_log,
         }
     }
 }

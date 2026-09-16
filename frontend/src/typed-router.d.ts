@@ -23,6 +23,7 @@ declare module 'vue-router/auto-routes' {
     '/dns': RouteRecordInfo<'/dns', '/dns', Record<never, never>, Record<never, never>>,
     '/domains': RouteRecordInfo<'/domains', '/domains', Record<never, never>, Record<never, never>>,
     '/hosts': RouteRecordInfo<'/hosts', '/hosts', Record<never, never>, Record<never, never>>,
+    '/login': RouteRecordInfo<'/login', '/login', Record<never, never>, Record<never, never>>,
     '/streams': RouteRecordInfo<'/streams', '/streams', Record<never, never>, Record<never, never>>,
     '/upstreams': RouteRecordInfo<'/upstreams', '/upstreams', Record<never, never>, Record<never, never>>,
   }

@@ -22,7 +22,7 @@
 | `flb` | 可执行文件（`crates/flb-cli`） |
 | Pingora | HTTP/HTTPS 代理 |
 | Axum | 管理 API `/api` + 内嵌前端 |
-| 存储 | `{data-dir}/config.json` |
+| 存储 | `{data-dir}/config.yaml` |
 
 默认端口：
 
@@ -98,8 +98,11 @@ docker compose up -d --build
 | `--data-dir` | `FLB_DATA_DIR` | `data` | 配置与 ACME 数据 |
 | `--www-dir` | `FLB_WWW_DIR` | `www` | 目录内有 `index.html` 时覆盖内嵌界面 |
 | `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt 预发环境 |
+| `--admin-user` | `FLB_ADMIN_USER` | `admin` | 管理界面用户名 |
+| `--admin-password` | `FLB_ADMIN_PASSWORD` | `admin` | 管理界面密码 |
+| `--jwt-secret` | `FLB_JWT_SECRET` | 由用户名/密码派生 | JWT 签名密钥（无状态登录） |
 
-日志：`RUST_LOG=info`（或 `debug`）。
+日志：`{data-dir}/logs/access.log`、`error.log` 与 `flb.log`（异步落盘；按日期和 100 MiB 拆分）。控制台仍可用 `RUST_LOG`（默认 `info`）。
 
 ## 数据目录
 
@@ -107,12 +110,19 @@ docker compose up -d --build
 
 ```text
 data/
-  config.json              # 证书、域名、后端、主机、数据流
+  config.yaml              # 证书、域名、后端、主机、数据流
+  logs/
+    access.log             # 当前访问日志
+    error.log              # 当前告警与错误
+    flb.log                # 管理后台审计日志（JSON 行）
+    access.YYYY-MM-DD.log  # 按日期 / 大小滚动
+    error.YYYY-MM-DD.log
+    flb.YYYY-MM-DD.log
   letsencrypt/
     acme-account.json      # Let's Encrypt 账号
 ```
 
-签发后的证书内容写在 `config.json`，不单独落成 PEM 文件。
+已有 `config.json` 会在首次启动时导入并写成 `config.yaml`。签发后的证书内容写在 `config.yaml`，不单独落成 PEM 文件。
 
 ## 开发
 

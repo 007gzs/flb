@@ -19,6 +19,7 @@ bytes = { workspace = true }
 dashmap = { workspace = true }
 flb-core = { path = "../flb-core" }
 flb-config = { path = "../flb-config" }
+flb-log = { path = "../flb-log" }
 flb-plugin = { path = "../flb-plugin" }
 flb-router = { path = "../flb-router" }
 flb-store = { path = "../flb-store" }

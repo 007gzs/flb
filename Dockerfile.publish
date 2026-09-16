@@ -5,6 +5,10 @@ ARG VERSION
 ARG TARGETARCH
 COPY dist/${FILE}-${VERSION}-${TARGETARCH}-unknown-linux-musl /bin/flb
 RUN chmod +x /bin/flb && mkdir -p /flb/data/
-EXPOSE 80 443 9000
 VOLUME /flb/data/
-CMD ["flb", "--data-dir", "/flb/data"]
+ENV FLB_DATA_DIR /flb/data
+ENV FLB_ADMIN_LISTEN 0.0.0.0:9000
+ENV FLB_HTTP_LISTEN 0.0.0.0:80
+ENV FLB_HTTPS_LISTEN 0.0.0.0:443
+EXPOSE 80 443 9000
+CMD ["flb"]

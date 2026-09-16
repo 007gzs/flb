@@ -22,7 +22,7 @@ Reverse proxy and load balancer built on [Pingora](https://github.com/cloudflare
 | `flb` | Binary (`crates/flb-cli`) |
 | Pingora | HTTP/HTTPS proxy |
 | Axum | Admin API `/api` + embedded UI |
-| Storage | `{data-dir}/config.json` |
+| Storage | `{data-dir}/config.yaml` |
 
 Default ports:
 
@@ -98,8 +98,11 @@ Flags also accept matching environment variables.
 | `--data-dir` | `FLB_DATA_DIR` | `data` | Config and ACME data |
 | `--www-dir` | `FLB_WWW_DIR` | `www` | Override embedded UI when `index.html` exists |
 | `--acme-staging` | `FLB_ACME_STAGING` | `false` | Let's Encrypt staging |
+| `--admin-user` | `FLB_ADMIN_USER` | `admin` | Admin username |
+| `--admin-password` | `FLB_ADMIN_PASSWORD` | `admin` | Admin password |
+| `--jwt-secret` | `FLB_JWT_SECRET` | derived from user/password | JWT signing key (stateless admin login) |
 
-Logs: `RUST_LOG=info` (or `debug`).
+Logs: `{data-dir}/logs/access.log`, `error.log`, and `flb.log` (async writes; rotated by day and at 100 MiB). Console still follows `RUST_LOG` (default `info`).
 
 ## Data directory
 
@@ -107,12 +110,19 @@ Logs: `RUST_LOG=info` (or `debug`).
 
 ```text
 data/
-  config.json              # certs, domains, upstreams, hosts, streams
+  config.yaml              # certs, domains, upstreams, hosts, streams
+  logs/
+    access.log             # current access log
+    error.log              # current warnings and errors
+    flb.log                # admin audit log (JSON lines)
+    access.YYYY-MM-DD.log  # rotated by date / size
+    error.YYYY-MM-DD.log
+    flb.YYYY-MM-DD.log
   letsencrypt/
     acme-account.json      # Let's Encrypt account
 ```
 
-Issued certificate PEMs are stored in `config.json`, not as separate files.
+Existing `config.json` is imported once and rewritten as `config.yaml`. Issued certificate PEMs are stored in `config.yaml`, not as separate files.
 
 ## Development
 

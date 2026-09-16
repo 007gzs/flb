@@ -1,6 +1,7 @@
 use clap::Parser;
 use flb_cert::AcmeService;
 use flb_config::Settings;
+use flb_log::{FileLogger, init_tracing};
 use flb_proxy::ProxyState;
 use flb_store::Store;
 use std::net::SocketAddr;
@@ -29,15 +30,18 @@ struct Cli {
     /// 使用 Let's Encrypt 预发环境
     #[arg(long, env = "FLB_ACME_STAGING", default_value_t = false)]
     acme_staging: bool,
+    /// 管理界面用户名
+    #[arg(long, env = "FLB_ADMIN_USER", default_value = "admin")]
+    admin_user: String,
+    /// 管理界面密码
+    #[arg(long, env = "FLB_ADMIN_PASSWORD", default_value = "admin")]
+    admin_password: String,
+    /// JWT 签名密钥；为空时由用户名和密码派生
+    #[arg(long, env = "FLB_JWT_SECRET", default_value = "")]
+    jwt_secret: String,
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
-
     let cli = Cli::parse();
     std::fs::create_dir_all(&cli.data_dir)?;
     let settings = Settings {
@@ -47,7 +51,18 @@ fn main() -> anyhow::Result<()> {
         data_dir: cli.data_dir,
         www_dir: cli.www_dir,
         acme_staging: cli.acme_staging,
+        admin_user: cli.admin_user.clone(),
+        admin_password: cli.admin_password.clone(),
+        jwt_secret: if cli.jwt_secret.is_empty() {
+            format!("flb-jwt\n{}\n{}", cli.admin_user, cli.admin_password)
+        } else {
+            cli.jwt_secret
+        },
     };
+    let error_log = FileLogger::open(settings.error_log_path())?;
+    let access_log = FileLogger::open(settings.access_log_path())?;
+    let audit_log = FileLogger::open(settings.audit_log_path())?;
+    init_tracing(error_log);
     std::fs::create_dir_all(settings.acme_dir())?;
     let legacy_account = settings.data_dir.join("acme-account.json");
     if legacy_account.exists() && !settings.acme_account_path().exists() {
@@ -70,8 +85,12 @@ fn main() -> anyhow::Result<()> {
                 .enable_all()
                 .build()
                 .expect("admin runtime");
-            if let Err(err) = rt.block_on(flb_manager::run(admin_settings, admin_store, admin_acme))
-            {
+            if let Err(err) = rt.block_on(flb_manager::run(
+                admin_settings,
+                admin_store,
+                admin_acme,
+                audit_log,
+            )) {
                 tracing::error!(error = %err, "admin server exited");
             }
         })?;
@@ -93,7 +112,7 @@ fn main() -> anyhow::Result<()> {
         admin = %settings.admin_listen,
         "starting flb proxy"
     );
-    let state = ProxyState::new(store, acme.http01.clone(), Arc::new(settings));
+    let state = ProxyState::new(store, acme.http01.clone(), Arc::new(settings), access_log);
     flb_proxy::run_http_proxy(state).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(())
 }

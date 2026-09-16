@@ -19,9 +19,9 @@ clap = { workspace = true }
 dashmap = { workspace = true }
 flb-cert = { path = "../flb-cert" }
 flb-config = { path = "../flb-config" }
+flb-log = { path = "../flb-log" }
 flb-manager = { path = "../flb-manager" }
 flb-proxy = { path = "../flb-proxy" }
 flb-store = { path = "../flb-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }

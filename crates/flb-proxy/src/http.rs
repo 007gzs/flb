@@ -11,13 +11,13 @@ use pingora::prelude::*;
 use pingora::proxy::{ProxyHttp, Session, http_proxy_service};
 use pingora::upstreams::peer::HttpPeer;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::warn;
 
 pub struct FlbProxy {
     pub state: ProxyState,
 }
 
-#[derive(Default)]
 pub struct ProxyCtx {
     request_headers: Vec<HeaderRewrite>,
     response_headers: Vec<HeaderRewrite>,
@@ -25,6 +25,21 @@ pub struct ProxyCtx {
     peer_tls: bool,
     peer_sni: String,
     peer_verify: bool,
+    started: Instant,
+}
+
+impl Default for ProxyCtx {
+    fn default() -> Self {
+        Self {
+            request_headers: Vec::new(),
+            response_headers: Vec::new(),
+            peer_addr: None,
+            peer_tls: false,
+            peer_sni: String::new(),
+            peer_verify: false,
+            started: Instant::now(),
+        }
+    }
 }
 
 #[async_trait]
@@ -223,6 +238,34 @@ impl ProxyHttp for FlbProxy {
             }
         }
         Ok(())
+    }
+
+    async fn logging(&self, session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX) {
+        let req = session.req_header();
+        let method = req.method.as_str();
+        let uri = req.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+        let host = request_host(req);
+        let ua = req
+            .headers
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-");
+        let client = session
+            .client_addr()
+            .map(|a| a.to_string())
+            .unwrap_or_else(|| "-".into());
+        let status = session
+            .response_written()
+            .map(|h| h.status.as_u16())
+            .unwrap_or(0);
+        let bytes = session.body_bytes_sent();
+        let ms = ctx.started.elapsed().as_millis();
+        self.state.access_log.line(format!(
+            "{client} {host} \"{method} {uri}\" {status} {bytes} {ms}ms \"{ua}\""
+        ));
+        if let Some(err) = e {
+            warn!(error = %err, host = %host, uri = %uri, "proxy error");
+        }
     }
 }
 

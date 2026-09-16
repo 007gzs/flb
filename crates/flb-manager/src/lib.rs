@@ -1,8 +1,11 @@
+mod audit;
+mod auth;
 mod schedule;
 mod ui;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -13,6 +16,7 @@ use flb_core::{
     Host, MatchType, Route, StreamConfig, StreamProtocol, Upstream, UpstreamProtocol,
     UpstreamServer, join_hostnames, new_id, now_rfc3339, parse_hostnames,
 };
+use flb_log::FileLogger;
 use flb_store::Store;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -24,18 +28,27 @@ use tracing::error;
 pub struct AppState {
     pub store: Arc<Store>,
     pub acme: Arc<AcmeService>,
+    pub settings: Settings,
+    pub audit_log: FileLogger,
 }
 
 pub async fn run(
     settings: Settings,
     store: Arc<Store>,
     acme: Arc<AcmeService>,
+    audit_log: FileLogger,
 ) -> Result<(), std::io::Error> {
     crate::schedule::spawn_renewal(store.clone(), acme.clone());
-    let state = AppState { store, acme };
-    let api = Router::new()
-        .route("/health", get(health))
+    let state = AppState {
+        store,
+        acme,
+        settings: settings.clone(),
+        audit_log,
+    };
+    let protected = Router::new()
         .route("/stats", get(stats))
+        .route("/me", get(auth::me))
+        .route("/logout", post(auth::logout))
         .route("/certs", get(list_certs).post(create_cert))
         .route(
             "/certs/{id}",
@@ -68,10 +81,14 @@ pub async fn run(
         .route(
             "/streams/{id}",
             get(get_stream).put(update_stream).delete(delete_stream),
-        );
+        )
+        .layer(from_fn_with_state(state.clone(), auth::require_auth));
 
     let mut app = Router::new()
-        .nest("/api", api)
+        .route("/api/health", get(health))
+        .route("/api/login", post(auth::login))
+        .nest("/api", protected)
+        .layer(from_fn_with_state(state.clone(), audit::operation_log))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -89,7 +106,11 @@ pub async fn run(
 
     let listener = tokio::net::TcpListener::bind(settings.admin_listen).await?;
     tracing::info!(addr = %settings.admin_listen, "admin server listening");
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -903,6 +924,12 @@ impl ApiError {
     fn bad(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+    fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
             message: message.into(),
         }
     }

@@ -30,6 +30,14 @@ export default {
     deleted: '已删除',
     type: '类型',
   },
+  login: {
+    username: '用户名',
+    password: '密码',
+    submit: '登录',
+    logout: '退出',
+    failed: '登录失败',
+    needFields: '请输入用户名和密码',
+  },
   overview: {
     hosts: '主机',
   },
