@@ -68,6 +68,18 @@ export default {
       aliyun: '阿里云',
       wanwang: '万网',
       godaddy: 'GoDaddy',
+      tencent: '腾讯云',
+      xinnet: '新网',
+      cloudflare: 'Cloudflare',
+      amazon: '亚马逊',
+    },
+    accessKey: 'Access Key',
+    accessSecret: 'Access Secret',
+    hint: {
+      tencent: 'SecretId / SecretKey',
+      xinnet: 'Access ID / Access Secret',
+      cloudflare: 'API Token 填在 Access Key，Secret 可留空；或 Email + Global API Key',
+      amazon: 'Access Key ID / Secret Access Key',
     },
   },
   upstreams: {

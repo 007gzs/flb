@@ -20,8 +20,22 @@ const form = reactive({
 const kinds = computed(() => [
   { value: 'aliyun' as const, label: t('dns.kind.aliyun') },
   { value: 'wanwang' as const, label: t('dns.kind.wanwang') },
+  { value: 'tencent' as const, label: t('dns.kind.tencent') },
+  { value: 'xinnet' as const, label: t('dns.kind.xinnet') },
+  { value: 'cloudflare' as const, label: t('dns.kind.cloudflare') },
+  { value: 'amazon' as const, label: t('dns.kind.amazon') },
   { value: 'godaddy' as const, label: t('dns.kind.godaddy') },
 ])
+
+const kindHint = computed(() => {
+  const hints: Partial<Record<DnsProvider['kind'], string>> = {
+    tencent: t('dns.hint.tencent'),
+    xinnet: t('dns.hint.xinnet'),
+    cloudflare: t('dns.hint.cloudflare'),
+    amazon: t('dns.hint.amazon'),
+  }
+  return hints[form.kind] || ''
+})
 
 async function load() {
   loading.value = true
@@ -96,7 +110,7 @@ onMounted(load)
     </div>
     <el-table v-loading="loading" :data="list" stripe>
       <el-table-column prop="name" :label="t('common.name')" />
-      <el-table-column :label="t('common.type')" width="140">
+      <el-table-column :label="t('common.type')" width="160">
         <template #default="{ row }">
           {{ kindLabel(row.kind) }}
         </template>
@@ -123,12 +137,15 @@ onMounted(load)
             <el-option v-for="k in kinds" :key="k.value" :label="k.label" :value="k.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Access Key">
+        <el-form-item :label="t('dns.accessKey')">
           <el-input v-model="form.accessKey" />
         </el-form-item>
-        <el-form-item label="Access Secret">
+        <el-form-item :label="t('dns.accessSecret')">
           <el-input v-model="form.accessSecret" type="password" show-password />
         </el-form-item>
+        <p v-if="kindHint" class="hint">
+          {{ kindHint }}
+        </p>
       </el-form>
       <template #footer>
         <el-button @click="visible = false">
@@ -141,3 +158,12 @@ onMounted(load)
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.hint {
+  margin: 0 0 0 110px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
+}
+</style>

@@ -11,7 +11,7 @@ export interface Certificate {
 export interface DnsProvider {
   id: string
   name: string
-  kind: 'aliyun' | 'wanwang' | 'godaddy'
+  kind: 'aliyun' | 'wanwang' | 'godaddy' | 'tencent' | 'xinnet' | 'cloudflare' | 'amazon'
   accessKey: string
   accessSecret: string
 }

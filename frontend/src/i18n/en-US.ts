@@ -68,6 +68,18 @@ export default {
       aliyun: 'Alibaba Cloud',
       wanwang: 'Wanwang',
       godaddy: 'GoDaddy',
+      tencent: 'Tencent Cloud',
+      xinnet: 'Xinnet',
+      cloudflare: 'Cloudflare',
+      amazon: 'Amazon Route 53',
+    },
+    accessKey: 'Access Key',
+    accessSecret: 'Access Secret',
+    hint: {
+      tencent: 'SecretId / SecretKey',
+      xinnet: 'Access ID / Access Secret',
+      cloudflare: 'Put API Token in Access Key and leave Secret empty, or Email + Global API Key',
+      amazon: 'Access Key ID / Secret Access Key',
     },
   },
   upstreams: {

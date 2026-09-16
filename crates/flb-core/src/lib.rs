@@ -30,6 +30,10 @@ pub enum DnsProviderKind {
     Aliyun,
     Wanwang,
     Godaddy,
+    Tencent,
+    Xinnet,
+    Cloudflare,
+    Amazon,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

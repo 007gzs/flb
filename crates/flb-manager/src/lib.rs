@@ -240,7 +240,7 @@ async fn create_dns(
         name: require_name(&input.name)?,
         kind: input.kind,
         access_key: require_name(&input.access_key)?,
-        access_secret: require_name(&input.access_secret)?,
+        access_secret: dns_secret(input.kind, &input.access_secret)?,
     };
     Ok(Json(
         state.store.upsert_dns_provider(item).map_err(store_err)?,
@@ -260,7 +260,7 @@ async fn update_dns(
         name: require_name(&input.name)?,
         kind: input.kind,
         access_key: require_name(&input.access_key)?,
-        access_secret: require_name(&input.access_secret)?,
+        access_secret: dns_secret(input.kind, &input.access_secret)?,
     };
     Ok(Json(
         state.store.upsert_dns_provider(item).map_err(store_err)?,
@@ -866,6 +866,14 @@ fn require_name(value: &str) -> ApiResult<String> {
         return Err(ApiError::bad("名称不能为空"));
     }
     Ok(v.to_string())
+}
+
+fn dns_secret(kind: DnsProviderKind, value: &str) -> ApiResult<String> {
+    let v = value.trim().to_string();
+    if v.is_empty() && kind != DnsProviderKind::Cloudflare {
+        return Err(ApiError::bad("Access Secret 不能为空"));
+    }
+    Ok(v)
 }
 
 fn empty_to_none(value: Option<String>) -> Option<String> {
