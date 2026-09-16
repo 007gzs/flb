@@ -50,6 +50,10 @@ function protocolsFromHost(row: Host): Array<'http' | 'https'> {
   return out
 }
 
+function hostnameLabel(row: Host) {
+  return row.hostname?.trim() ? row.hostname : t('hosts.defaultCatchAll')
+}
+
 function protocolLabel(row: Host) {
   return protocolsFromHost(row).map(p => p.toUpperCase()).join(' / ')
 }
@@ -175,7 +179,7 @@ async function save() {
 }
 
 async function remove(row: Host) {
-  await ElMessageBox.confirm(t('hosts.deleteConfirm', { name: row.hostname }), t('common.confirm'), { type: 'warning' })
+  await ElMessageBox.confirm(t('hosts.deleteConfirm', { name: hostnameLabel(row) }), t('common.confirm'), { type: 'warning' })
   try {
     await api.hosts.remove(row.id)
     ElMessage.success(t('common.deleted'))
@@ -202,7 +206,11 @@ onMounted(load)
       </el-button>
     </div>
     <el-table v-loading="loading" :data="list" stripe>
-      <el-table-column prop="hostname" :label="t('hosts.hostname')" min-width="180" />
+      <el-table-column :label="t('hosts.hostname')" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ hostnameLabel(row) }}
+        </template>
+      </el-table-column>
       <el-table-column :label="t('hosts.protocol')" width="140">
         <template #default="{ row }">
           {{ protocolLabel(row) }}
@@ -237,7 +245,7 @@ onMounted(load)
     <el-dialog v-model="visible" :title="editing ? t('hosts.edit') : t('hosts.add')" width="920px" top="5vh">
       <el-form label-width="140px">
         <el-form-item :label="t('hosts.hostname')">
-          <el-input v-model="form.hostname" :placeholder="t('hosts.hostnamePlaceholder')" />
+          <el-input v-model="form.hostname" type="textarea" :rows="3" :placeholder="t('hosts.hostnamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('hosts.protocolType')">
           <el-checkbox-group v-model="form.protocols" @change="onProtocolsChange">

@@ -1,6 +1,7 @@
 use crate::ProxyState;
 use async_trait::async_trait;
-use flb_router::host_matches;
+use flb_core::parse_hostnames;
+use flb_router::{host_matches, host_specificity};
 use parking_lot::RwLock;
 use pingora::listeners::TlsAccept;
 use pingora::tls::ext::{ssl_use_certificate, ssl_use_private_key};
@@ -65,7 +66,9 @@ impl DynamicCert {
             if host.https_enabled
                 && let Some(id) = &host.cert_id
             {
-                host_cert.push((host.hostname.clone(), id.clone()));
+                for pattern in parse_hostnames(&host.hostname) {
+                    host_cert.push((pattern, id.clone()));
+                }
             }
         }
         for domain in &snapshot.domains {
@@ -83,25 +86,20 @@ impl DynamicCert {
     fn pick(&self, sni: Option<&str>) -> ParsedCert {
         self.refresh();
         let cache = self.cache.read();
-        if let Some(sni) = sni {
-            let mut best: Option<(&str, u32)> = None;
-            for (pattern, id) in &cache.host_cert {
-                if host_matches(pattern, sni) {
-                    let score = if pattern.contains('*') {
-                        pattern.len() as u32
-                    } else {
-                        10_000 + pattern.len() as u32
-                    };
-                    if best.is_none_or(|(_, s)| score > s) {
-                        best = Some((id, score));
-                    }
+        let sni = sni.unwrap_or("");
+        let mut best: Option<(&str, u32)> = None;
+        for (pattern, id) in &cache.host_cert {
+            if host_matches(pattern, sni) {
+                let score = host_specificity(pattern);
+                if best.is_none_or(|(_, s)| score > s) {
+                    best = Some((id, score));
                 }
             }
-            if let Some((id, _)) = best
-                && let Some(parsed) = cache.by_id.get(id)
-            {
-                return parsed.clone();
-            }
+        }
+        if let Some((id, _)) = best
+            && let Some(parsed) = cache.by_id.get(id)
+        {
+            return parsed.clone();
         }
         cache
             .by_id

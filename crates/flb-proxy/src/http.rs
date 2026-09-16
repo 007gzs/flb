@@ -46,12 +46,7 @@ impl ProxyHttp for FlbProxy {
         }
 
         let host_header = request_host(session.req_header());
-        if host_header.is_empty() {
-            return write_plain(session, 400, "missing Host header".into())
-                .await
-                .map(|_| true);
-        }
-        if session.req_header().headers.get("host").is_none() {
+        if session.req_header().headers.get("host").is_none() && !host_header.is_empty() {
             let _ = session
                 .req_header_mut()
                 .insert_header("Host", host_header.as_str());
@@ -59,9 +54,18 @@ impl ProxyHttp for FlbProxy {
 
         let snapshot = self.state.store.snapshot();
         let Some(host) = find_host(&snapshot, &host_header) else {
-            return write_plain(session, 404, "no host matched".into())
-                .await
-                .map(|_| true);
+            let msg = if host_header.is_empty() {
+                "missing Host header"
+            } else {
+                "no host matched"
+            };
+            return write_plain(
+                session,
+                if host_header.is_empty() { 400 } else { 404 },
+                msg.into(),
+            )
+            .await
+            .map(|_| true);
         };
 
         let is_tls = session

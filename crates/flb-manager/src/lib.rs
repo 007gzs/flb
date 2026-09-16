@@ -11,7 +11,7 @@ use flb_config::Settings;
 use flb_core::{
     AcmeChallenge, CertMode, Certificate, DnsProvider, DnsProviderKind, Domain, HeaderRewrite,
     Host, MatchType, Route, StreamConfig, StreamProtocol, Upstream, UpstreamProtocol,
-    UpstreamServer, new_id, now_rfc3339,
+    UpstreamServer, join_hostnames, new_id, now_rfc3339, parse_hostnames,
 };
 use flb_store::Store;
 use serde::{Deserialize, Serialize};
@@ -616,6 +616,7 @@ async fn delete_upstream(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HostInput {
+    #[serde(default)]
     hostname: String,
     #[serde(default = "default_http")]
     protocol: String,
@@ -650,8 +651,25 @@ fn default_http() -> String {
     "http".into()
 }
 
-fn validate_host(input: &HostInput, store: &Store) -> ApiResult<()> {
-    require_name(&input.hostname)?;
+fn validate_host(input: &HostInput, store: &Store, except_id: Option<&str>) -> ApiResult<()> {
+    let names = parse_hostnames(&input.hostname);
+    if names.iter().any(|n| n.is_empty()) && names.len() > 1 {
+        return Err(ApiError::bad("默认主机不能与其它域名写在一起"));
+    }
+    let snapshot = store.snapshot();
+    for existing in &snapshot.hosts {
+        if except_id == Some(existing.id.as_str()) {
+            continue;
+        }
+        for pattern in parse_hostnames(&existing.hostname) {
+            if names.iter().any(|n| n == &pattern) {
+                if pattern.is_empty() {
+                    return Err(ApiError::bad("默认主机已存在，只能配置一个"));
+                }
+                return Err(ApiError::bad(format!("主机域名已存在: {pattern}")));
+            }
+        }
+    }
     if input.default_upstream_id.trim().is_empty() {
         return Err(ApiError::bad("请选择默认后端服务组"));
     }
@@ -716,10 +734,10 @@ async fn create_host(
     State(state): State<AppState>,
     Json(input): Json<HostInput>,
 ) -> ApiResult<Json<Host>> {
-    validate_host(&input, &state.store)?;
+    validate_host(&input, &state.store, None)?;
     let item = Host {
         id: new_id(),
-        hostname: input.hostname.trim().to_ascii_lowercase(),
+        hostname: join_hostnames(&parse_hostnames(&input.hostname)),
         protocol: input.protocol,
         https_enabled: input.https_enabled,
         cert_id: empty_to_none(input.cert_id),
@@ -738,10 +756,10 @@ async fn update_host(
     if state.store.snapshot().host(&id).is_none() {
         return Err(ApiError::not_found("主机不存在"));
     }
-    validate_host(&input, &state.store)?;
+    validate_host(&input, &state.store, Some(&id))?;
     let item = Host {
         id,
-        hostname: input.hostname.trim().to_ascii_lowercase(),
+        hostname: join_hostnames(&parse_hostnames(&input.hostname)),
         protocol: input.protocol,
         https_enabled: input.https_enabled,
         cert_id: empty_to_none(input.cert_id),

@@ -194,6 +194,32 @@ pub struct Host {
     pub routes: Vec<Route>,
 }
 
+pub fn parse_hostnames(raw: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for part in raw.split(|c: char| matches!(c, ',' | ';' | '\n' | '\r') || c.is_whitespace()) {
+        let name = part.trim().to_ascii_lowercase();
+        if name.is_empty() {
+            continue;
+        }
+        if !names.iter().any(|existing| existing == &name) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        vec![String::new()]
+    } else {
+        names
+    }
+}
+
+pub fn join_hostnames(names: &[String]) -> String {
+    if names.len() == 1 && names[0].is_empty() {
+        String::new()
+    } else {
+        names.join(", ")
+    }
+}
+
 fn default_protocol() -> String {
     "http".into()
 }

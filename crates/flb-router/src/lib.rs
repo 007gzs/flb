@@ -1,5 +1,6 @@
 use flb_core::{
     ConfigData, HeaderRewrite, Host, MatchType, Route, Upstream, UpstreamProtocol, UpstreamServer,
+    parse_hostnames,
 };
 use rand::Rng;
 use regex::Regex;
@@ -23,7 +24,10 @@ pub fn strip_host_port(host: &str) -> &str {
 
 pub fn host_matches(pattern: &str, hostname: &str) -> bool {
     let hostname = strip_host_port(hostname).to_ascii_lowercase();
-    let pattern = pattern.to_ascii_lowercase();
+    let pattern = pattern.trim().to_ascii_lowercase();
+    if pattern.is_empty() {
+        return true;
+    }
     if pattern == hostname {
         return true;
     }
@@ -39,19 +43,28 @@ pub fn host_matches(pattern: &str, hostname: &str) -> bool {
     }
 }
 
+pub fn host_specificity(pattern: &str) -> u32 {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        1
+    } else if pattern.contains('*') {
+        100 + pattern.len() as u32
+    } else {
+        10_000 + pattern.len() as u32
+    }
+}
+
 pub fn find_host<'a>(data: &'a ConfigData, hostname: &str) -> Option<&'a Host> {
     let hostname = strip_host_port(hostname);
     let mut best: Option<&Host> = None;
     let mut best_score = 0u32;
     for host in &data.hosts {
-        if !host_matches(&host.hostname, hostname) {
-            continue;
+        let mut score = 0u32;
+        for pattern in parse_hostnames(&host.hostname) {
+            if host_matches(&pattern, hostname) {
+                score = score.max(host_specificity(&pattern));
+            }
         }
-        let score = if host.hostname.contains('*') {
-            host.hostname.len() as u32
-        } else {
-            10_000 + host.hostname.len() as u32
-        };
         if score > best_score {
             best_score = score;
             best = Some(host);
@@ -319,6 +332,62 @@ mod tests {
         assert!(host_matches("*.example.com", "a.example.com"));
         assert!(!host_matches("*.example.com", "example.com"));
         assert!(host_matches("app.example.com", "app.example.com:8443"));
+        assert!(host_matches("", "anything.example.com"));
+        assert!(host_matches("  ", "missing-host"));
+    }
+
+    #[test]
+    fn empty_hostname_is_default_fallback() {
+        let specific = sample_host();
+        let default_host = Host {
+            id: new_id(),
+            hostname: "".into(),
+            protocol: "http".into(),
+            https_enabled: false,
+            cert_id: None,
+            force_https: false,
+            default_upstream_id: "up-catch-all".into(),
+            routes: vec![],
+        };
+        let data = ConfigData {
+            hosts: vec![default_host.clone(), specific.clone()],
+            ..ConfigData::default()
+        };
+        assert_eq!(
+            find_host(&data, "a.example.com").map(|h| h.default_upstream_id.as_str()),
+            Some("up-default")
+        );
+        assert_eq!(
+            find_host(&data, "other.com").map(|h| h.default_upstream_id.as_str()),
+            Some("up-catch-all")
+        );
+    }
+
+    #[test]
+    fn multiple_hostnames_on_one_host() {
+        let host = Host {
+            id: new_id(),
+            hostname: "a.example.com, *.app.test".into(),
+            protocol: "http".into(),
+            https_enabled: false,
+            cert_id: None,
+            force_https: false,
+            default_upstream_id: "up-multi".into(),
+            routes: vec![],
+        };
+        let data = ConfigData {
+            hosts: vec![host],
+            ..ConfigData::default()
+        };
+        assert_eq!(
+            find_host(&data, "a.example.com").map(|h| h.default_upstream_id.as_str()),
+            Some("up-multi")
+        );
+        assert_eq!(
+            find_host(&data, "x.app.test").map(|h| h.default_upstream_id.as_str()),
+            Some("up-multi")
+        );
+        assert!(find_host(&data, "other.com").is_none());
     }
 
     #[test]
