@@ -8,4 +8,14 @@ dist-ssr
 *.local
 *.log
 /data
+/benchmark/certs/*.key
+/benchmark/certs/*.crt
+/benchmark/certs/*.pem
+/benchmark/flb/data/
+/benchmark/generated/
+/benchmark/origin/html/
+/benchmark/results/*.json
+/benchmark/results/*.bin
+/benchmark/results/*.txt
+/benchmark/results/*.csv
 

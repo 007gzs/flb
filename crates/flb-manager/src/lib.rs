@@ -155,7 +155,7 @@ struct CertInput {
 }
 
 async fn list_certs(State(state): State<AppState>) -> Json<Vec<Certificate>> {
-    Json(state.store.snapshot().certificates)
+    Json(state.store.snapshot().certificates.clone())
 }
 
 async fn get_cert(
@@ -236,7 +236,7 @@ struct DnsInput {
 }
 
 async fn list_dns(State(state): State<AppState>) -> Json<Vec<DnsProvider>> {
-    Json(state.store.snapshot().dns_providers)
+    Json(state.store.snapshot().dns_providers.clone())
 }
 
 async fn get_dns(
@@ -410,7 +410,7 @@ fn cleanup_unused_cert(state: &AppState, cert_id: Option<&str>) {
 }
 
 async fn list_domains(State(state): State<AppState>) -> Json<Vec<Domain>> {
-    Json(state.store.snapshot().domains)
+    Json(state.store.snapshot().domains.clone())
 }
 
 async fn get_domain(
@@ -588,7 +588,7 @@ fn normalize_upstream(id: String, input: UpstreamInput) -> Upstream {
 }
 
 async fn list_upstreams(State(state): State<AppState>) -> Json<Vec<Upstream>> {
-    Json(state.store.snapshot().upstreams)
+    Json(state.store.snapshot().upstreams.clone())
 }
 
 async fn get_upstream(
@@ -738,7 +738,7 @@ fn into_routes(routes: Vec<RouteInput>) -> Vec<Route> {
 }
 
 async fn list_hosts(State(state): State<AppState>) -> Json<Vec<Host>> {
-    Json(state.store.snapshot().hosts)
+    Json(state.store.snapshot().hosts.clone())
 }
 
 async fn get_host(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Host>> {
@@ -821,7 +821,7 @@ fn validate_stream(input: &StreamInput) -> ApiResult<()> {
 }
 
 async fn list_streams(State(state): State<AppState>) -> Json<Vec<StreamConfig>> {
-    Json(state.store.snapshot().streams)
+    Json(state.store.snapshot().streams.clone())
 }
 
 async fn get_stream(

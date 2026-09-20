@@ -275,7 +275,7 @@ impl AcmeService {
 
     pub async fn renew_due(&self, store: &Store) {
         let snapshot = store.snapshot();
-        for domain in snapshot.domains {
+        for domain in &snapshot.domains {
             if domain.mode != CertMode::Acme {
                 continue;
             }

@@ -1,45 +1,48 @@
 use crate::ProxyState;
-use async_trait::async_trait;
 use flb_core::parse_hostnames;
-use flb_router::{host_matches, host_specificity};
+use flb_router::{host_specificity, strip_host_port};
 use parking_lot::RwLock;
-use pingora::listeners::TlsAccept;
-use pingora::tls::ext::{ssl_use_certificate, ssl_use_private_key};
-use pingora::tls::pkey::{PKey, Private};
-use pingora::tls::ssl::{NameType, SslRef};
-use pingora::tls::x509::X509;
+use pingora::tls::sign::CertifiedKey;
+use pingora::tls::{
+    ClientHello, CryptoProvider, ResolvesServerCert, install_default_crypto_provider,
+};
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Arc;
 use tracing::warn;
 
-#[derive(Clone)]
-struct ParsedCert {
-    certs: Vec<X509>,
-    key: PKey<Private>,
-}
-
 struct Cache {
     generation: u64,
-    by_id: HashMap<String, ParsedCert>,
-    host_cert: Vec<(String, String)>,
+    exact: HashMap<String, Arc<CertifiedKey>>,
+    wildcards: Vec<(String, Arc<CertifiedKey>, u32)>,
+    default: Arc<CertifiedKey>,
 }
 
 pub struct DynamicCert {
     state: Arc<ProxyState>,
     cache: RwLock<Cache>,
-    fallback: ParsedCert,
+    fallback: Arc<CertifiedKey>,
+}
+
+impl std::fmt::Debug for DynamicCert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DynamicCert").finish_non_exhaustive()
+    }
 }
 
 impl DynamicCert {
-    pub fn new(state: Arc<ProxyState>) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(state: Arc<ProxyState>) -> Arc<Self> {
+        install_default_crypto_provider();
+        let fallback = Arc::new(make_fallback().expect("generate fallback TLS certificate"));
+        Arc::new(Self {
             state,
             cache: RwLock::new(Cache {
                 generation: 0,
-                by_id: HashMap::new(),
-                host_cert: Vec::new(),
+                exact: HashMap::new(),
+                wildcards: Vec::new(),
+                default: fallback.clone(),
             }),
-            fallback: make_fallback().expect("generate fallback TLS certificate"),
+            fallback,
         })
     }
 
@@ -47,7 +50,7 @@ impl DynamicCert {
         let generation = self.state.store.generation();
         {
             let cache = self.cache.read();
-            if cache.generation == generation && !cache.by_id.is_empty() {
+            if cache.generation == generation && cache.generation != 0 {
                 return;
             }
         }
@@ -56,83 +59,102 @@ impl DynamicCert {
         for cert in &snapshot.certificates {
             match parse_cert(&cert.cert_pem, &cert.key_pem) {
                 Ok(parsed) => {
-                    by_id.insert(cert.id.clone(), parsed);
+                    by_id.insert(cert.id.clone(), Arc::new(parsed));
                 }
                 Err(err) => warn!(id = %cert.id, error = %err, "skip invalid certificate"),
             }
         }
-        let mut host_cert = Vec::new();
+        let mut exact: HashMap<String, (Arc<CertifiedKey>, u32)> = HashMap::new();
+        let mut wildcards = Vec::new();
+        let mut default: Option<(Arc<CertifiedKey>, u32)> = None;
         for host in &snapshot.hosts {
             if host.https_enabled
                 && let Some(id) = &host.cert_id
+                && let Some(cert) = by_id.get(id)
             {
                 for pattern in parse_hostnames(&host.hostname) {
-                    host_cert.push((pattern, id.clone()));
+                    index_pattern(&mut exact, &mut wildcards, &mut default, &pattern, cert);
                 }
             }
         }
         for domain in &snapshot.domains {
-            if let Some(id) = &domain.cert_id {
-                host_cert.push((domain.name.clone(), id.clone()));
+            if let Some(id) = &domain.cert_id
+                && let Some(cert) = by_id.get(id)
+            {
+                index_pattern(&mut exact, &mut wildcards, &mut default, &domain.name, cert);
             }
         }
+        wildcards.sort_by_key(|a| std::cmp::Reverse(a.2));
         *self.cache.write() = Cache {
             generation,
-            by_id,
-            host_cert,
+            exact: exact.into_iter().map(|(k, (c, _))| (k, c)).collect(),
+            wildcards,
+            default: default
+                .map(|(c, _)| c)
+                .or_else(|| by_id.into_values().next())
+                .unwrap_or_else(|| self.fallback.clone()),
         };
     }
 
-    fn pick(&self, sni: Option<&str>) -> ParsedCert {
+    fn pick(&self, sni: Option<&str>) -> Arc<CertifiedKey> {
         self.refresh();
         let cache = self.cache.read();
-        let sni = sni.unwrap_or("");
-        let mut best: Option<(&str, u32)> = None;
-        for (pattern, id) in &cache.host_cert {
-            if host_matches(pattern, sni) {
-                let score = host_specificity(pattern);
-                if best.is_none_or(|(_, s)| score > s) {
-                    best = Some((id, score));
-                }
+        let stripped = strip_host_port(sni.unwrap_or(""));
+        let lowered;
+        let key: &str = if stripped.bytes().all(|b| !b.is_ascii_uppercase()) {
+            stripped
+        } else {
+            lowered = stripped.to_ascii_lowercase();
+            &lowered
+        };
+        if let Some(cert) = cache.exact.get(key) {
+            return cert.clone();
+        }
+        for (suffix, cert, _) in &cache.wildcards {
+            if key != suffix
+                && key
+                    .strip_suffix(suffix.as_str())
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+            {
+                return cert.clone();
             }
         }
-        if let Some((id, _)) = best
-            && let Some(parsed) = cache.by_id.get(id)
-        {
-            return parsed.clone();
-        }
-        cache
-            .by_id
-            .values()
-            .next()
-            .cloned()
-            .unwrap_or_else(|| self.fallback.clone())
+        cache.default.clone()
     }
 }
 
-#[async_trait]
-impl TlsAccept for DynamicCert {
-    async fn certificate_callback(&self, ssl: &mut SslRef) {
-        let sni = ssl.servername(NameType::HOST_NAME).map(str::to_owned);
-        let parsed = self.pick(sni.as_deref());
-        if let Some(leaf) = parsed.certs.first()
-            && let Err(err) = ssl_use_certificate(ssl, leaf)
-        {
-            warn!(error = %err, "failed to set TLS certificate");
-            return;
+impl ResolvesServerCert for DynamicCert {
+    fn resolve(&self, client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.pick(client_hello.server_name()))
+    }
+}
+
+fn index_pattern(
+    exact: &mut HashMap<String, (Arc<CertifiedKey>, u32)>,
+    wildcards: &mut Vec<(String, Arc<CertifiedKey>, u32)>,
+    default: &mut Option<(Arc<CertifiedKey>, u32)>,
+    pattern: &str,
+    cert: &Arc<CertifiedKey>,
+) {
+    let score = host_specificity(pattern);
+    if pattern.is_empty() {
+        if default.as_ref().is_none_or(|(_, s)| score > *s) {
+            *default = Some((cert.clone(), score));
         }
-        for extra in parsed.certs.iter().skip(1) {
-            if let Err(err) = pingora::tls::ext::ssl_add_chain_cert(ssl, extra) {
-                warn!(error = %err, "failed to add TLS chain certificate");
+    } else if let Some(suffix) = pattern.strip_prefix("*.") {
+        wildcards.push((suffix.to_ascii_lowercase(), cert.clone(), score));
+    } else {
+        let key = pattern.to_ascii_lowercase();
+        match exact.get(&key) {
+            Some(&(_, s)) if s >= score => {}
+            _ => {
+                exact.insert(key, (cert.clone(), score));
             }
-        }
-        if let Err(err) = ssl_use_private_key(ssl, &parsed.key) {
-            warn!(error = %err, "failed to set TLS private key");
         }
     }
 }
 
-fn make_fallback() -> Result<ParsedCert, String> {
+fn make_fallback() -> Result<CertifiedKey, String> {
     let mut params = rcgen::CertificateParams::new(vec!["localhost".into(), "flb.local".into()])
         .map_err(|e| e.to_string())?;
     params.distinguished_name = rcgen::DistinguishedName::new();
@@ -144,32 +166,33 @@ fn make_fallback() -> Result<ParsedCert, String> {
     parse_cert(&cert.pem(), &key_pair.serialize_pem())
 }
 
-fn parse_cert(cert_pem: &str, key_pem: &str) -> Result<ParsedCert, String> {
-    let mut certs = Vec::new();
-    for block in split_pem(cert_pem, "CERTIFICATE") {
-        let cert = X509::from_pem(block.as_bytes()).map_err(|e| e.to_string())?;
-        certs.push(cert);
-    }
+fn parse_cert(cert_pem: &str, key_pem: &str) -> Result<CertifiedKey, String> {
+    let certs = rustls_pemfile::certs(&mut Cursor::new(cert_pem.as_bytes()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     if certs.is_empty() {
         return Err("certificate pem is empty".into());
     }
-    let key = PKey::private_key_from_pem(key_pem.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(ParsedCert { certs, key })
+    let key = rustls_pemfile::private_key(&mut Cursor::new(key_pem.as_bytes()))
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "private key pem is empty".to_string())?;
+    install_default_crypto_provider();
+    let provider = CryptoProvider::get_default()
+        .ok_or_else(|| "rustls crypto provider is not installed".to_string())?;
+    CertifiedKey::from_der(certs, key, provider).map_err(|e| e.to_string())
 }
 
-fn split_pem(pem: &str, label: &str) -> Vec<String> {
-    let begin = format!("-----BEGIN {label}-----");
-    let end = format!("-----END {label}-----");
-    let mut out = Vec::new();
-    let mut rest = pem;
-    while let Some(start) = rest.find(&begin) {
-        let slice = &rest[start..];
-        if let Some(stop) = slice.find(&end) {
-            out.push(format!("{}{end}\n", &slice[..stop]));
-            rest = &slice[stop + end.len()..];
-        } else {
-            break;
-        }
+#[cfg(test)]
+mod tests {
+    use super::parse_cert;
+
+    #[test]
+    fn parses_self_signed_pem() {
+        let mut params = rcgen::CertificateParams::new(vec!["example.test".into()]).unwrap();
+        params.distinguished_name = rcgen::DistinguishedName::new();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key_pair).unwrap();
+        let parsed = parse_cert(&cert.pem(), &key_pair.serialize_pem()).unwrap();
+        assert_eq!(parsed.cert.len(), 1);
     }
-    out
 }

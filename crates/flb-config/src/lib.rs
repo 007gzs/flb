@@ -12,6 +12,10 @@ pub struct Settings {
     pub admin_user: String,
     pub admin_password: String,
     pub jwt_secret: String,
+    pub threads: usize,
+    pub access_log: bool,
+    /// Max concurrent proxied HTTP requests; extra requests get 503.
+    pub max_inflight: usize,
 }
 
 impl Settings {

@@ -39,6 +39,15 @@ struct Cli {
     /// JWT 签名密钥；为空时由用户名和密码派生
     #[arg(long, env = "FLB_JWT_SECRET", default_value = "")]
     jwt_secret: String,
+    /// HTTP 代理工作线程数，0 表示使用 CPU 核数
+    #[arg(long, env = "FLB_THREADS", default_value_t = 0)]
+    threads: usize,
+    /// 同时处理的 HTTP 请求上限，超出返回 503
+    #[arg(long, env = "FLB_MAX_INFLIGHT", default_value_t = 65536)]
+    max_inflight: usize,
+    /// 是否写入 access.log；压测对比时可关闭
+    #[arg(long, env = "FLB_ACCESS_LOG", default_value_t = true)]
+    access_log: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -58,6 +67,9 @@ fn main() -> anyhow::Result<()> {
         } else {
             cli.jwt_secret
         },
+        threads: cli.threads,
+        access_log: cli.access_log,
+        max_inflight: cli.max_inflight.max(1),
     };
     let error_log = FileLogger::open(settings.error_log_path())?;
     let access_log = FileLogger::open(settings.access_log_path())?;
@@ -82,6 +94,7 @@ fn main() -> anyhow::Result<()> {
         .name("flb-admin".into())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()
                 .expect("admin runtime");
@@ -100,6 +113,7 @@ fn main() -> anyhow::Result<()> {
         .name("flb-stream".into())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()
                 .expect("stream runtime");

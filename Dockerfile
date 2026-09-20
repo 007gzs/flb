@@ -22,9 +22,9 @@ WORKDIR /flb
 COPY --from=rust_builder /src/target/x86_64-unknown-linux-musl/release/flb /bin/
 RUN mkdir -p /flb/data/
 VOLUME /flb/data/
-ENV FLB_DATA_DIR /flb/data
-ENV FLB_ADMIN_LISTEN 0.0.0.0:9000
-ENV FLB_HTTP_LISTEN 0.0.0.0:80
-ENV FLB_HTTPS_LISTEN 0.0.0.0:443
+ENV FLB_DATA_DIR=/flb/data
+ENV FLB_ADMIN_LISTEN=0.0.0.0:9000
+ENV FLB_HTTP_LISTEN=0.0.0.0:80
+ENV FLB_HTTPS_LISTEN=0.0.0.0:443
 EXPOSE 80 443 9000
 CMD ["flb"]

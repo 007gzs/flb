@@ -4,14 +4,15 @@ use flb_core::{
 };
 use rand::Rng;
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub struct SelectedRoute {
-    pub upstream_id: String,
-    pub uri: String,
-    pub request_headers: Vec<HeaderRewrite>,
-    pub response_headers: Vec<HeaderRewrite>,
+pub struct SelectedRoute<'a> {
+    pub upstream_id: &'a str,
+    pub uri: Cow<'a, str>,
+    pub request_headers: &'a [HeaderRewrite],
+    pub response_headers: &'a [HeaderRewrite],
     pub captures: Vec<String>,
 }
 
@@ -73,7 +74,70 @@ pub fn find_host<'a>(data: &'a ConfigData, hostname: &str) -> Option<&'a Host> {
     best
 }
 
-pub fn match_route(host: &Host, method: &str, path: &str) -> SelectedRoute {
+#[derive(Debug, Clone, Default)]
+pub struct HostIndex {
+    exact: HashMap<String, usize>,
+    wildcards: Vec<(String, usize, u32)>,
+    default: Option<usize>,
+}
+
+pub fn build_host_index(hosts: &[Host]) -> HostIndex {
+    let mut exact: HashMap<String, (usize, u32)> = HashMap::new();
+    let mut wildcards: Vec<(String, usize, u32)> = Vec::new();
+    let mut default: Option<(usize, u32)> = None;
+    for (i, host) in hosts.iter().enumerate() {
+        for pattern in parse_hostnames(&host.hostname) {
+            let score = host_specificity(&pattern);
+            if pattern.is_empty() {
+                if default.is_none_or(|(_, s)| score > s) {
+                    default = Some((i, score));
+                }
+            } else if let Some(suffix) = pattern.strip_prefix("*.") {
+                wildcards.push((suffix.to_ascii_lowercase(), i, score));
+            } else {
+                let key = pattern.to_ascii_lowercase();
+                match exact.get(&key) {
+                    Some(&(_, s)) if s >= score => {}
+                    _ => {
+                        exact.insert(key, (i, score));
+                    }
+                }
+            }
+        }
+    }
+    wildcards.sort_by_key(|a| std::cmp::Reverse(a.2));
+    HostIndex {
+        exact: exact.into_iter().map(|(k, (i, _))| (k, i)).collect(),
+        wildcards,
+        default: default.map(|(i, _)| i),
+    }
+}
+
+pub fn lookup_host<'a>(hosts: &'a [Host], index: &HostIndex, hostname: &str) -> Option<&'a Host> {
+    let stripped = strip_host_port(hostname);
+    let lowered;
+    let key: &str = if stripped.bytes().all(|b| !b.is_ascii_uppercase()) {
+        stripped
+    } else {
+        lowered = stripped.to_ascii_lowercase();
+        &lowered
+    };
+    if let Some(&i) = index.exact.get(key) {
+        return hosts.get(i);
+    }
+    for (suffix, i, _) in &index.wildcards {
+        if key != suffix
+            && key
+                .strip_suffix(suffix.as_str())
+                .is_some_and(|prefix| prefix.ends_with('.'))
+        {
+            return hosts.get(*i);
+        }
+    }
+    index.default.and_then(|i| hosts.get(i))
+}
+
+pub fn match_route<'a>(host: &'a Host, method: &str, path: &'a str) -> SelectedRoute<'a> {
     for route in &host.routes {
         if !method_allowed(&route.methods, method) {
             continue;
@@ -81,19 +145,19 @@ pub fn match_route(host: &Host, method: &str, path: &str) -> SelectedRoute {
         if let Some(captures) = match_path(route, path) {
             let uri = rewrite_uri(path, route, &captures);
             return SelectedRoute {
-                upstream_id: route.upstream_id.clone(),
-                uri,
-                request_headers: route.request_headers.clone(),
-                response_headers: route.response_headers.clone(),
+                upstream_id: &route.upstream_id,
+                uri: Cow::Owned(uri),
+                request_headers: &route.request_headers,
+                response_headers: &route.response_headers,
                 captures,
             };
         }
     }
     SelectedRoute {
-        upstream_id: host.default_upstream_id.clone(),
-        uri: path.to_string(),
-        request_headers: Vec::new(),
-        response_headers: Vec::new(),
+        upstream_id: &host.default_upstream_id,
+        uri: Cow::Borrowed(path),
+        request_headers: &[],
+        response_headers: &[],
         captures: Vec::new(),
     }
 }
@@ -226,6 +290,9 @@ pub fn expand_headers(
 pub fn pick_backend(servers: &[UpstreamServer]) -> Option<&UpstreamServer> {
     if servers.is_empty() {
         return None;
+    }
+    if servers.len() == 1 {
+        return servers.first();
     }
     let total: u32 = servers.iter().map(|s| s.weight.max(1)).sum();
     let mut ticket = rand::thread_rng().gen_range(0..total);
@@ -388,6 +455,69 @@ mod tests {
             Some("up-multi")
         );
         assert!(find_host(&data, "other.com").is_none());
+        let index = build_host_index(&data.hosts);
+        assert_eq!(
+            lookup_host(&data.hosts, &index, "a.example.com")
+                .map(|h| h.default_upstream_id.as_str()),
+            Some("up-multi")
+        );
+        assert_eq!(
+            lookup_host(&data.hosts, &index, "x.app.test").map(|h| h.default_upstream_id.as_str()),
+            Some("up-multi")
+        );
+        assert!(lookup_host(&data.hosts, &index, "other.com").is_none());
+    }
+
+    #[test]
+    fn host_index_matches_linear_scan() {
+        let data = ConfigData {
+            hosts: vec![
+                Host {
+                    id: new_id(),
+                    hostname: String::new(),
+                    protocol: "http".into(),
+                    https_enabled: false,
+                    cert_id: None,
+                    force_https: false,
+                    default_upstream_id: "up-catch-all".into(),
+                    routes: vec![],
+                },
+                Host {
+                    id: new_id(),
+                    hostname: "*.example.com".into(),
+                    protocol: "http".into(),
+                    https_enabled: false,
+                    cert_id: None,
+                    force_https: false,
+                    default_upstream_id: "up-wild".into(),
+                    routes: vec![],
+                },
+                Host {
+                    id: new_id(),
+                    hostname: "a.example.com".into(),
+                    protocol: "http".into(),
+                    https_enabled: false,
+                    cert_id: None,
+                    force_https: false,
+                    default_upstream_id: "up-exact".into(),
+                    routes: vec![],
+                },
+            ],
+            ..ConfigData::default()
+        };
+        let index = build_host_index(&data.hosts);
+        for name in [
+            "a.example.com",
+            "b.example.com",
+            "other.com",
+            "A.Example.COM",
+        ] {
+            assert_eq!(
+                find_host(&data, name).map(|h| h.default_upstream_id.as_str()),
+                lookup_host(&data.hosts, &index, name).map(|h| h.default_upstream_id.as_str()),
+                "mismatch for {name}"
+            );
+        }
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub async fn run_streams(store: Arc<Store>) {
             for task in tasks.drain(..) {
                 task.abort();
             }
-            let streams = store.snapshot().streams;
+            let streams = store.snapshot().streams.clone();
             info!(count = streams.len(), "reloading stream listeners");
             for stream in streams {
                 tasks.push(tokio::spawn(run_one(stream)));
@@ -56,6 +56,8 @@ async fn run_tcp(stream: &StreamConfig) -> std::io::Result<()> {
         tokio::spawn(async move {
             match TcpStream::connect(&target).await {
                 Ok(mut outbound) => {
+                    let _ = inbound.set_nodelay(true);
+                    let _ = outbound.set_nodelay(true);
                     if let Err(err) = copy_bidirectional(&mut inbound, &mut outbound).await {
                         warn!(peer = %peer, error = %err, "tcp proxy error");
                     }

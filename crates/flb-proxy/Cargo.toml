@@ -27,5 +27,6 @@ http = { workspace = true }
 parking_lot = { workspace = true }
 pingora = { workspace = true }
 rcgen = { workspace = true }
+rustls-pemfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

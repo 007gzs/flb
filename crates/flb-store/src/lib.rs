@@ -3,6 +3,7 @@ use parking_lot::RwLock;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
@@ -22,7 +23,7 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 
 pub struct Store {
     path: PathBuf,
-    data: RwLock<ConfigData>,
+    data: RwLock<Arc<ConfigData>>,
     generation: AtomicU64,
 }
 
@@ -46,7 +47,7 @@ impl Store {
         };
         Ok(Self {
             path: yaml_path,
-            data: RwLock::new(data),
+            data: RwLock::new(Arc::new(data)),
             generation: AtomicU64::new(1),
         })
     }
@@ -55,7 +56,7 @@ impl Store {
         self.generation.load(Ordering::Relaxed)
     }
 
-    pub fn snapshot(&self) -> ConfigData {
+    pub fn snapshot(&self) -> Arc<ConfigData> {
         self.data.read().clone()
     }
 
@@ -67,7 +68,7 @@ impl Store {
 
     pub fn replace(&self, data: ConfigData) -> Result<()> {
         self.persist(&data)?;
-        *self.data.write() = data;
+        *self.data.write() = Arc::new(data);
         Ok(())
     }
 
@@ -76,8 +77,10 @@ impl Store {
         F: FnOnce(&mut ConfigData) -> Result<T>,
     {
         let mut guard = self.data.write();
-        let result = f(&mut guard)?;
-        self.persist(&guard)?;
+        let mut data = guard.as_ref().clone();
+        let result = f(&mut data)?;
+        self.persist(&data)?;
+        *guard = Arc::new(data);
         Ok(result)
     }
 
@@ -312,5 +315,28 @@ mod tests {
         let store = Store::open(dir.path().join("config.yaml")).unwrap();
         assert!(dir.path().join("config.yaml").exists());
         assert!(store.snapshot().certificates.is_empty());
+    }
+
+    #[test]
+    fn snapshot_is_shared_until_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("config.yaml")).unwrap();
+        let first = store.snapshot();
+        let second = store.snapshot();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+        store
+            .upsert_certificate(Certificate {
+                id: "c1".into(),
+                name: "demo".into(),
+                cert_pem: "CERT".into(),
+                key_pem: "KEY".into(),
+                not_after: None,
+                auto_issued: false,
+                created_at: now_rfc3339(),
+            })
+            .unwrap();
+        let third = store.snapshot();
+        assert!(!std::sync::Arc::ptr_eq(&first, &third));
+        assert_eq!(third.certificates.len(), 1);
     }
 }
